@@ -79,6 +79,15 @@ struct MainContentView: View {
                             Button(viewModel.localized("resume_stream"), systemImage: "play.circle.fill") {
                                 // If the window is still open, this notification un-hides the controls
                                 NotificationCenter.default.post(name: Notification.Name("ResumeStreamFromMenu"), object: nil)
+
+                                // A menu presented with pushWindow sits on top of the original
+                                // stream scene. Closing this singleton menu restores that exact
+                                // scene, so opening another stream window here would duplicate it.
+                                if viewModel.mainMenuPresentedOverStream {
+                                    viewModel.mainMenuPresentedOverStream = false
+                                    dismissWindow(id: "mainView")
+                                    return
+                                }
                                 
                                 // Re-open the window or immersive space in case it was dismissed
                                 let dest = viewModel.getStreamDestination()

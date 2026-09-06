@@ -176,6 +176,12 @@ struct AppsView: View {
     private func resumeStreamFromMainMenu() async {
         NotificationCenter.default.post(name: Notification.Name("ResumeStreamFromMenu"), object: nil)
 
+        if viewModel.mainMenuPresentedOverStream {
+            viewModel.mainMenuPresentedOverStream = false
+            dismissWindow(id: "mainView")
+            return
+        }
+
         // If stream window/space was closed by system gesture (e.g. crown),
         // no receiver may exist for ResumeStreamFromMenu. Reopen from saved config.
         guard let saved = viewModel.savedStreamConfigForResume else { return }
@@ -201,6 +207,7 @@ struct AppsView: View {
 
     @MainActor
     private func stopStreamFromMainMenu() async {
+        viewModel.mainMenuPresentedOverStream = false
         NotificationCenter.default.post(name: Notification.Name("RequestStreamCloseFromMainMenu"), object: nil)
         viewModel.userDidRequestDisconnect()
         await viewModel.waitForTeardown(timeout: 1.2)

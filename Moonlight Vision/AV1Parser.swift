@@ -31,8 +31,10 @@ public enum AV1FormatDescriptionError: Error {
 /// repository while sharing the same format-description path as RealityKit.
 @objc(MLAV1FormatDescriptionBuilder)
 public final class MLAV1FormatDescriptionBuilder: NSObject {
-    @objc(createFromIDR:masteringDisplayColorVolume:contentLightLevelInfo:)
-    public static func create(
+    // Deliberately avoid an Objective-C "create…" selector. Core Foundation's
+    // Create Rule otherwise makes ownership at the Swift/ObjC boundary ambiguous.
+    @objc(formatDescriptionFromIDR:masteringDisplayColorVolume:contentLightLevelInfo:)
+    public static func formatDescription(
         fromIDR frameData: Data,
         masteringDisplayColorVolume: Data?,
         contentLightLevelInfo: Data?

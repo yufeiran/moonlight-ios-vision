@@ -104,6 +104,7 @@ struct RealityKitStreamView: View {
         viewModel.savedStreamConfigForResume = nil
         streamConfig = nil
         Task { @MainActor in
+            viewModel.mainMenuPresentedOverStream = false
             // Close the large stream scene first. Opening the menu while it still occupies
             // the user's forward space makes visionOS collision avoidance put the menu near
             // the floor and too close to the user.
@@ -2510,6 +2511,7 @@ struct _RealityKitStreamView: View {
         isReturningToMainMenu = true
 
         Task { @MainActor in
+            viewModel.mainMenuPresentedOverStream = false
             if isImmersive {
                 await dismissImmersiveSpace()
             } else {

@@ -16,6 +16,7 @@ struct UIKitStreamView: View {
 
     @EnvironmentObject private var viewModel: MainViewModel
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.pushWindow) private var pushWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -113,7 +114,7 @@ struct UIKitStreamView: View {
                             homeAction: { 
                                 viewModel.isHidingForResume = true
                                 viewModel.savedStreamConfigForResume = configBinding.wrappedValue
-                                closeUIKitWindowThenOpenMain()
+                                pushMainMenuOverStream()
                             },
                             closeAction: { handleHomeButtonClose() },
                             toggleKeyboardAction: {
@@ -193,6 +194,8 @@ struct UIKitStreamView: View {
                         handleCloseFromViewModel()
                     }
                     .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ResumeStreamFromMenu"))) { _ in
+                        isReturningToMainMenu = false
+                        viewModel.isHidingForResume = false
                         dismissWindow(id: "mainView")
                         let currentMode = SpatialAudioMode(rawValue: viewModel.streamSettings.spatialAudioMode) ?? .window
                         AudioHelpers.applySpatialAudioMode(currentMode)
@@ -388,13 +391,23 @@ struct UIKitStreamView: View {
 
     // MARK: - Window Management Logic
 
-    /// Dismiss the stream window before opening the menu so visionOS does not place
-    /// the menu around the large stream window's old footprint near the floor.
+    /// Replace the plain stream window with the singleton menu without destroying
+    /// either scene. visionOS keeps the stream window's transform and restores it
+    /// when the pushed menu is dismissed.
+    private func pushMainMenuOverStream() {
+        guard !isReturningToMainMenu else { return }
+        isReturningToMainMenu = true
+        viewModel.mainMenuPresentedOverStream = true
+        pushWindow(id: "mainView")
+    }
+
+    /// Error/stop recovery path. Normal Home navigation uses pushWindow above.
     private func closeUIKitWindowThenOpenMain(delayBeforeDismiss: UInt64 = 0) {
         guard !isReturningToMainMenu else { return }
         isReturningToMainMenu = true
 
         Task { @MainActor in
+            viewModel.mainMenuPresentedOverStream = false
             if delayBeforeDismiss > 0 {
                 try? await Task.sleep(nanoseconds: delayBeforeDismiss)
             }

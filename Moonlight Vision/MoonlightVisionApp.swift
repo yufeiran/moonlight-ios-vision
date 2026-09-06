@@ -35,18 +35,16 @@ struct MoonlightVisionApp: SwiftUI.App {
     @ObservedObject private var sharePlayManager = SharePlayManager.shared
     
     var body: some Scene {
-        WindowGroup("Main view", id: "mainView") {
+        // The menu is a singleton. A WindowGroup creates a new instance for every
+        // openWindow call, which left multiple menus behind when several hosts were
+        // visible or more than one stream callback completed at the same time.
+        Window("Yu Moonlight", id: "mainView") {
             MainContentView()
                 .environmentObject(appDelegate.mainViewModel)
                 .persistentSystemOverlays(.hidden)
         }
         .windowStyle(.plain)
         .windowResizability(.contentSize)
-        .defaultWindowPlacement { _, context in
-            // .utilityPanel forces the window to spawn centered directly in front of the user,
-            // bypassing the default behavior that pushes it off to the right.
-            return WindowPlacement(.utilityPanel)
-        }
         
         WindowGroup("LoadingStream", id: "dummy") {
             DummyView()

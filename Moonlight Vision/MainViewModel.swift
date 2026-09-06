@@ -59,6 +59,9 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     
     // Store saved stream config for auto-resume on window reopen
     @Published var savedStreamConfigForResume: StreamConfiguration? = nil
+    /// True when the main menu was pushed over a still-live plain stream window.
+    /// Dismissing that one menu restores the exact same window and placement.
+    @Published var mainMenuPresentedOverStream = false
     
     // Flag to indicate if we are hiding the stream to resume later
     @Published var isHidingForResume: Bool = false

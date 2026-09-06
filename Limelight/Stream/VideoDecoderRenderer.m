@@ -35,6 +35,7 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
     NSData *masteringDisplayColorVolume;
     NSData *contentLightLevelInfo;
     CMVideoFormatDescriptionRef formatDesc;
+    BOOL av1FormatDescriptionNeedsRefresh;
     
     CADisplayLink* _displayLink;
     BOOL framePacing;
@@ -80,6 +81,7 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size,
         CFRelease(formatDesc);
         formatDesc = nil;
     }
+    av1FormatDescriptionNeedsRefresh = YES;
     
     [_view.widthAnchor constraintEqualToAnchor:_view.heightAnchor multiplier:_streamAspectRatio].active = true;
     
@@ -230,9 +232,18 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
 // Much of this logic comes from Chrome
 - (CMVideoFormatDescriptionRef)createAV1FormatDescriptionForIDRFrame:(NSData*)frameData {
 #if TARGET_OS_VISION
-    return [MLAV1FormatDescriptionBuilder createFromIDR:frameData
-                           masteringDisplayColorVolume:masteringDisplayColorVolume
-                                 contentLightLevelInfo:contentLightLevelInfo];
+    CMVideoFormatDescriptionRef candidate =
+        [MLAV1FormatDescriptionBuilder formatDescriptionFromIDR:frameData
+                                   masteringDisplayColorVolume:masteringDisplayColorVolume
+                                         contentLightLevelInfo:contentLightLevelInfo];
+    // Swift returns a non-owning Core Foundation reference to Objective-C. Keep an
+    // explicit +1 retain for the ivar and balance it when the renderer replaces or
+    // destroys the description. Without this, the display layer can serialize a
+    // dangling extension object asynchronously and crash in CFEqual/objc_msgSend.
+    if (candidate != NULL) {
+        CFRetain(candidate);
+    }
+    return candidate;
 #else
     NSMutableDictionary* extensions = [[NSMutableDictionary alloc] init];
 
@@ -448,8 +459,12 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
         //
         // NB: This logic depends on the fact that we submit all picture data in one buffer!
         
-        // Free the old format description
-        if (formatDesc != NULL) {
+        // H.264/HEVC rebuild their format descriptions from each IDR's parameter
+        // sets. AV1 carries its sequence header in-band, so keep the current
+        // description unless HDR metadata changed. Replacing it for every IDR can
+        // race the display layer while it is serializing previously queued samples.
+        BOOL isAV1 = (videoFormat & VIDEO_FORMAT_MASK_AV1) != 0;
+        if (!isAV1 && formatDesc != NULL) {
             CFRelease(formatDesc);
             formatDesc = NULL;
         }
@@ -529,10 +544,21 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
             [parameterSetBuffers removeAllObjects];
         }
         else if (videoFormat & VIDEO_FORMAT_MASK_AV1) {
-            NSData* fullFrameData = [NSData dataWithBytesNoCopy:data length:length freeWhenDone:NO];
-            
-            Log(LOG_I, @"Constructing new AV1 format description");
-            formatDesc = [self createAV1FormatDescriptionForIDRFrame:fullFrameData];
+            if (formatDesc == NULL || av1FormatDescriptionNeedsRefresh) {
+                NSData* fullFrameData = [NSData dataWithBytesNoCopy:data length:length freeWhenDone:NO];
+
+                Log(LOG_I, @"Constructing new AV1 format description");
+                CMVideoFormatDescriptionRef newFormatDesc =
+                    [self createAV1FormatDescriptionForIDRFrame:fullFrameData];
+                if (newFormatDesc != NULL) {
+                    CMVideoFormatDescriptionRef oldFormatDesc = formatDesc;
+                    formatDesc = newFormatDesc;
+                    av1FormatDescriptionNeedsRefresh = NO;
+                    if (oldFormatDesc != NULL) {
+                        CFRelease(oldFormatDesc);
+                    }
+                }
+            }
         }
         else {
             // Unsupported codec!
@@ -708,6 +734,7 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
     
     // If the metadata changed, request an IDR frame to re-create the CMVideoFormatDescription
     if (metadataChanged) {
+        av1FormatDescriptionNeedsRefresh = YES;
         LiRequestIdrFrame();
     }
 }
