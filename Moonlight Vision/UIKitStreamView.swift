@@ -35,6 +35,7 @@ struct UIKitStreamView: View {
     @State private var centerHintText: String = ""
     @State private var centerHintIcon: String = "info.circle"
     @State private var centerHintTask: Task<Void, Never>?
+    @State private var isReturningToMainMenu = false
     private let uikitMaxReconnectAttempts = 3
     private let uikitReconnectDelaySeconds: TimeInterval = 2.5
 
@@ -112,10 +113,7 @@ struct UIKitStreamView: View {
                             homeAction: { 
                                 viewModel.isHidingForResume = true
                                 viewModel.savedStreamConfigForResume = configBinding.wrappedValue
-                                openWindow(id: "mainView")
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                    dismissWindow(id: "classicStreamingWindow")
-                                }
+                                closeUIKitWindowThenOpenMain()
                             },
                             closeAction: { handleHomeButtonClose() },
                             toggleKeyboardAction: {
@@ -166,13 +164,8 @@ struct UIKitStreamView: View {
                             print("[UIKitStreamView] Zombie state detected onAppear. Closing.")
                             // We don't show the "Stream Stopped" error here because the user likely just
                             // restarted the app or came back from a long sleep.
-                            openWindow(id: "mainView")
-                            
-                            // Dismiss after small delay to ensure main view registers
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                dismissWindow(id: "classicStreamingWindow")
-                                streamConfig = nil
-                            }
+                            streamConfig = nil
+                            closeUIKitWindowThenOpenMain()
                         } else {
                             dismissWindow(id: "mainView")
                             startWindowSizeMonitoring()
@@ -226,12 +219,7 @@ struct UIKitStreamView: View {
                             lastStreamErrorMessage = nil
                             viewModel.streamState = .stopping
                             viewModel.savedStreamConfigForResume = nil
-                            openWindow(id: "mainView")
-                            dismissWindow(id: "classicStreamingWindow")
-                            streamConfig = nil
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                NotificationCenter.default.post(name: Notification.Name("StreamDidTeardownNotification"), object: nil)
-                            }
+                            performUIKitTeardown()
                         } label: {
                             Label(viewModel.localized("open_main_menu"), systemImage: "house.fill")
                                 .frame(maxWidth: .infinity)
@@ -347,13 +335,8 @@ struct UIKitStreamView: View {
             Button {
                 lastStreamErrorMessage = nil
                 viewModel.savedStreamConfigForResume = nil
-                openWindow(id: "mainView")
-                dismissWindow(id: "classicStreamingWindow")
-                streamConfig = nil
                 viewModel.streamState = .stopping
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    NotificationCenter.default.post(name: Notification.Name("StreamDidTeardownNotification"), object: nil)
-                }
+                performUIKitTeardown()
             } label: {
                 Label(viewModel.localized("open_main_menu"), systemImage: "house.fill")
                     .padding(.horizontal, 16)
@@ -405,6 +388,22 @@ struct UIKitStreamView: View {
 
     // MARK: - Window Management Logic
 
+    /// Dismiss the stream window before opening the menu so visionOS does not place
+    /// the menu around the large stream window's old footprint near the floor.
+    private func closeUIKitWindowThenOpenMain(delayBeforeDismiss: UInt64 = 0) {
+        guard !isReturningToMainMenu else { return }
+        isReturningToMainMenu = true
+
+        Task { @MainActor in
+            if delayBeforeDismiss > 0 {
+                try? await Task.sleep(nanoseconds: delayBeforeDismiss)
+            }
+            dismissWindow(id: "classicStreamingWindow")
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            openWindow(id: "mainView")
+        }
+    }
+
     private func handleHomeButtonClose() {
         print("[UIKitStreamView] Home button pressed.")
         performUIKitTeardown()
@@ -443,8 +442,10 @@ struct UIKitStreamView: View {
 
         streamConfig = nil
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            dismissWindow(id: "classicStreamingWindow")
+        // Give the UIKit controller a moment to begin its asynchronous shutdown,
+        // then remove its window before asking visionOS to place the main menu.
+        closeUIKitWindowThenOpenMain(delayBeforeDismiss: 150_000_000)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             NotificationCenter.default.post(name: Notification.Name("StreamDidTeardownNotification"), object: nil)
         }
     }

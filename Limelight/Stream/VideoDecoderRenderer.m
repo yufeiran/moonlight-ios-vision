@@ -9,10 +9,12 @@
 #import "VideoDecoderRenderer.h"
 #import "StreamView.h"
 #import "NSData+Conversion.h"
+#import "Moonlight-Swift.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavcodec/cbs.h>
 #include <libavcodec/cbs_av1.h>
+#include <libavcodec/codec_desc.h>
 #include <libavformat/avio.h>
 #include <libavutil/mem.h>
 
@@ -227,10 +229,22 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
 
 // Much of this logic comes from Chrome
 - (CMVideoFormatDescriptionRef)createAV1FormatDescriptionForIDRFrame:(NSData*)frameData {
+#if TARGET_OS_VISION
+    return [MLAV1FormatDescriptionBuilder createFromIDR:frameData
+                           masteringDisplayColorVolume:masteringDisplayColorVolume
+                                 contentLightLevelInfo:contentLightLevelInfo];
+#else
     NSMutableDictionary* extensions = [[NSMutableDictionary alloc] init];
 
     CodedBitstreamContext* cbsCtx = NULL;
-    int err = ff_cbs_init(&cbsCtx, AV_CODEC_ID_AV1, NULL);
+    // The checked-in FFmpeg headers and static libraries disagree on the
+    // numeric AV1 codec ID. Resolve it by name inside the linked library.
+    const AVCodecDescriptor *av1Descriptor = avcodec_descriptor_get_by_name("av1");
+    if (av1Descriptor == NULL) {
+        Log(LOG_E, @"FFmpeg AV1 descriptor is unavailable");
+        return nil;
+    }
+    int err = ff_cbs_init(&cbsCtx, av1Descriptor->id, NULL);
     if (err < 0) {
         Log(LOG_E, @"ff_cbs_init() failed: %d", err);
         return nil;
@@ -406,6 +420,7 @@ int DrSubmitDecodeUnit(PDECODE_UNIT decodeUnit);
     ff_cbs_fragment_free(&cbsFrag);
     ff_cbs_close(&cbsCtx);
     return formatDesc;
+#endif
 }
 
 // This function must free data for bufferType == BUFFER_TYPE_PICDATA

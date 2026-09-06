@@ -137,6 +137,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
     private var ambilightPipelineState: MTLRenderPipelineState?
 
     private var firstFrameEmitted = false
+    private var lastDecodeErrorStatus: OSStatus?
     private var lastAmbilightLogTime = Date.distantPast
     private var prevAmbilightTexture: MTLTexture?
 
@@ -194,13 +195,25 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
     func decompressionOutputCallback(
         decompressionOutputRefCon _: UnsafeMutableRawPointer?,
         sourceFrameRefCon _: UnsafeMutableRawPointer?,
-        status _: OSStatus,
-        infoFlags _: VTDecodeInfoFlags,
+        status: OSStatus,
+        infoFlags: VTDecodeInfoFlags,
         imageBuffer: CVImageBuffer?,
         presentationTimeStamp _: CMTime,
         presentationDuration _: CMTime?
     ) {
-        guard let imageBuffer = imageBuffer else { return }
+        guard status == noErr else {
+            if lastDecodeErrorStatus != status {
+                lastDecodeErrorStatus = status
+                print("DrawableVideoDecoder: VideoToolbox output failed with status \(status), flags \(infoFlags.rawValue)")
+            }
+            return
+        }
+        guard let imageBuffer = imageBuffer else {
+            if infoFlags.contains(.frameDropped) {
+                print("DrawableVideoDecoder: VideoToolbox dropped a frame before producing an image")
+            }
+            return
+        }
         
         if inflightSemaphore.wait(timeout: .now()) != .success {
             return
@@ -776,17 +789,29 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                     kCVPixelBufferMetalCompatibilityKey: true,
                     kCVPixelBufferPoolMinimumBufferCountKey: 3
                 ]
-                if hdrEnabled {
-                    attributes[kCVPixelBufferPixelFormatTypeKey] = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
-                } else {
-                    if (self.videoFormat & VIDEO_FORMAT_MASK_AV1) != 0 {
-                        attributes[kCVPixelBufferPixelFormatTypeKey] = kCVPixelFormatType_Lossless_32BGRA
-                    } else {
-                        attributes[kCVPixelBufferPixelFormatTypeKey] = decodingFormat
-                    }
+                // RealityKit's renderer already handles NV12/P010 directly. Requesting the
+                // private lossless BGRA format for AV1 causes VideoToolbox to create no usable
+                // output surface on M5 Vision Pro, which presents as a connected black screen.
+                attributes[kCVPixelBufferPixelFormatTypeKey] = hdrEnabled
+                    ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+                    : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+
+                var newSession: VTDecompressionSession?
+                let createStatus = VTDecompressionSessionCreate(
+                    allocator: kCFAllocatorDefault,
+                    formatDescription: formatDesc,
+                    decoderSpecification: decoderConfiguration as CFDictionary,
+                    imageBufferAttributes: attributes as CFDictionary,
+                    outputCallback: &decoderCallback,
+                    decompressionSessionOut: &newSession
+                )
+                guard createStatus == noErr, let newSession else {
+                    print("DrawableVideoDecoder: Failed to create \(codecDescription(videoFormat)) VideoToolbox session: \(createStatus)")
+                    session = nil
+                    return DR_NEED_IDR
                 }
-                
-                VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: formatDesc, decoderSpecification: decoderConfiguration as CFDictionary, imageBufferAttributes: attributes as CFDictionary, outputCallback: &decoderCallback, decompressionSessionOut: &session)
+                session = newSession
+                lastDecodeErrorStatus = nil
 
                 AudioHelpers.fixAudioForSurroundForCurrentWindow()
             } else {
@@ -812,15 +837,16 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             return DR_NEED_IDR
         }
         
-        VTDecompressionSessionDecodeFrame(activeSession, sampleBuffer: sampleBuffer, flags: [._EnableAsynchronousDecompression], frameRefcon: nil, infoFlagsOut: nil)
-
-        // Only signal first-shown once per connection session.
-        // firstFrameEmitted covers the render-path notification; this covers
-        // the decode-path (IDR arrival) so the UI unblocks even before the
-        // first frame is composited.  Subsequent IDR frames (error recovery)
-        // must NOT re-fire the callback or they flood onChange observers.
-        if decodeUnit.pointee.frameType == FRAME_TYPE_IDR && !firstFrameEmitted {
-            callbacks.videoContentShown()
+        let decodeStatus = VTDecompressionSessionDecodeFrame(
+            activeSession,
+            sampleBuffer: sampleBuffer,
+            flags: [._EnableAsynchronousDecompression],
+            frameRefcon: nil,
+            infoFlagsOut: nil
+        )
+        if decodeStatus != noErr {
+            print("DrawableVideoDecoder: Failed to submit \(codecDescription(videoFormat)) frame: \(decodeStatus)")
+            return DR_NEED_IDR
         }
 
         return DR_OK
@@ -994,7 +1020,11 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         do {
             return try frameData.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> CMVideoFormatDescription in
                 var mutableBuffer = UnsafeMutableBufferPointer<UInt8>(mutating: buffer.bindMemory(to: UInt8.self))
-                let fd = try CMVideoFormatDescriptionCreateFromAV1SequenceHeaderOBUWithAV1C(mutableBuffer)
+                let fd = try CMVideoFormatDescriptionCreateFromAV1SequenceHeaderOBUWithAV1C(
+                    mutableBuffer,
+                    masteringDisplayColorVolume: self.masteringDisplayColorVolume,
+                    contentLightLevelInfo: self.contentLightLevelInfo
+                )
                 return fd as CMVideoFormatDescription
             }
         } catch {

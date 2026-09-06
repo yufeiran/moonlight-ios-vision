@@ -1698,10 +1698,11 @@
 				CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES = YES;
 				CLANG_ENABLE_CXX_MODULES = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = "Moonlight XrOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Moonlight XrOS Personal.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = NWLYZ5DJ4D;
 				DEFINES_MODULE = YES;
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -1719,18 +1720,28 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
+				"LIBRARY_SEARCH_PATHS[sdk=xros*]" = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/libs/opus/lib",
 					"$(PROJECT_DIR)/libs/FFmpeg/lib/visionOS",
 					"$(PROJECT_DIR)/libs/SDL2/lib/visionOS",
 					"$(PROJECT_DIR)/libs/opus/lib/visionOS",
 				);
+				"LIBRARY_SEARCH_PATHS[sdk=xrsimulator*]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/libs/FFmpeg/lib/visionOS-Sim",
+					"$(PROJECT_DIR)/libs/SDL2/lib/visionOS-Sim",
+					"$(PROJECT_DIR)/libs/opus/lib/visionOS-Sim",
+				);
 				MARKETING_VERSION = 11.0.22;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu99 gnu++11";
-				OTHER_LDFLAGS = "-Wl,-ld_classic";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.moonlight-stream-beta.Moonlight-Vision-luma";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-liconv",
+					"-lz",
+					"-lswresample",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.yufeiran.MoonlightVision;
+				PRODUCT_NAME = "Yu Moonlight";
 				PROVISIONING_PROFILE = "";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = xros;
@@ -1757,10 +1768,11 @@
 				CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES = YES;
 				CLANG_ENABLE_CXX_MODULES = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = "Moonlight XrOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "Moonlight XrOS Personal.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = NWLYZ5DJ4D;
 				DEFINES_MODULE = YES;
 				ENABLE_MODULE_VERIFIER = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -1778,18 +1790,28 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
+				"LIBRARY_SEARCH_PATHS[sdk=xros*]" = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/libs/opus/lib",
 					"$(PROJECT_DIR)/libs/FFmpeg/lib/visionOS",
 					"$(PROJECT_DIR)/libs/SDL2/lib/visionOS",
 					"$(PROJECT_DIR)/libs/opus/lib/visionOS",
 				);
+				"LIBRARY_SEARCH_PATHS[sdk=xrsimulator*]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/libs/FFmpeg/lib/visionOS-Sim",
+					"$(PROJECT_DIR)/libs/SDL2/lib/visionOS-Sim",
+					"$(PROJECT_DIR)/libs/opus/lib/visionOS-Sim",
+				);
 				MARKETING_VERSION = 11.0.22;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu99 gnu++11";
-				OTHER_LDFLAGS = "-Wl,-ld_classic";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.moonlight-stream-beta.Moonlight-Vision-luma";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-liconv",
+					"-lz",
+					"-lswresample",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.yufeiran.MoonlightVision;
+				PRODUCT_NAME = "Yu Moonlight";
 				PROVISIONING_PROFILE = "";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = xros;

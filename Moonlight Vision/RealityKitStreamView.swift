@@ -33,6 +33,7 @@ struct RealityKitStreamView: View {
     @Binding var streamConfig: StreamConfiguration?
     var needsHdr: Bool
     var isImmersive: Bool
+    @State private var isRedirectingToMainMenu = false
     
     var body: some View {
         if let config = streamConfig {
@@ -98,16 +99,21 @@ struct RealityKitStreamView: View {
 
     /// Open the main menu window and close this dead streaming window/space.
     private func redirectZombieToMainMenu() {
+        guard !isRedirectingToMainMenu else { return }
+        isRedirectingToMainMenu = true
         viewModel.savedStreamConfigForResume = nil
-        openWindow(id: "mainView")
-        // Small delay so the main window has time to register before we close self.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        streamConfig = nil
+        Task { @MainActor in
+            // Close the large stream scene first. Opening the menu while it still occupies
+            // the user's forward space makes visionOS collision avoidance put the menu near
+            // the floor and too close to the user.
             if isImmersive {
-                Task { await dismissImmersiveSpace() }
+                await dismissImmersiveSpace()
             } else {
                 dismissWindow(id: "realitykitStreamingWindow")
             }
-            streamConfig = nil
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            openWindow(id: "mainView")
         }
     }
 }
@@ -138,6 +144,7 @@ struct _RealityKitStreamView: View {
     @State private var controllerSupport: ControllerSupport?
     @StateObject var connectionCallbacks: ObservableConnectionManager = .init()
     @State private var lastStreamErrorMessage: String? = nil
+    @State private var isReturningToMainMenu = false
     
     /// Auto-reconnect: attempt count (0 = fresh, 1..=max = retrying). Reset on first frame.
     @State private var reconnectAttemptCount: Int = 0
@@ -662,7 +669,6 @@ struct _RealityKitStreamView: View {
                 Button {
                     viewModel.savedStreamConfigForResume = nil
                     lastStreamErrorMessage = nil
-            openWindow(id: "mainView")
                     triggerCloseSequence()
                 } label: {
                     Label(viewModel.localized("open_main_menu"), systemImage: "house.fill")
@@ -749,7 +755,6 @@ struct _RealityKitStreamView: View {
             Button {
                 lastStreamErrorMessage = nil
                 connectionCallbacks.showAlert = false
-                openWindow(id: "mainView")
                 triggerCloseSequence()
             } label: {
                 Label(viewModel.localized("close"), systemImage: "xmark.circle.fill")
@@ -782,7 +787,6 @@ struct _RealityKitStreamView: View {
             Button {
                 lastStreamErrorMessage = nil
                 connectionCallbacks.showAlert = false
-                openWindow(id: "mainView")
                 triggerCloseSequence()
             } label: {
                 Label(viewModel.localized("close"), systemImage: "xmark.circle.fill")
@@ -813,7 +817,6 @@ struct _RealityKitStreamView: View {
                     .frame(maxWidth: 420)
                 Button {
                     connectionCallbacks.showAlert = false
-                    openWindow(id: "mainView")
                     triggerCloseSequence()
                 } label: {
                     Label(viewModel.localized("close"), systemImage: "xmark.circle.fill")
@@ -880,10 +883,7 @@ struct _RealityKitStreamView: View {
                             homeAction: { 
                                 viewModel.isHidingForResume = true
                                 viewModel.savedStreamConfigForResume = streamConfig
-                                openWindow(id: "mainView")
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                    dismissWindow(id: "realitykitStreamingWindow")
-                                }
+                                closeStreamSceneThenOpenMain()
                             },
                             closeAction: {
                                 viewModel.savedStreamConfigForResume = nil
@@ -1000,13 +1000,9 @@ struct _RealityKitStreamView: View {
             // Scene appeared while not streaming — zombie window (e.g. restored by
             // visionOS after a reboot with a stale StreamConfiguration value).
             // Redirect to main menu and close self.
-            openWindow(id: "mainView")
             Task { @MainActor in
                 viewModel.userDidRequestDisconnect()
-                await dismissImmersiveSpace()
-                if !isImmersive {
-                    dismissWindow(id: "realitykitStreamingWindow")
-                }
+                closeStreamSceneThenOpenMain()
             }
             return
         }
@@ -1085,7 +1081,7 @@ struct _RealityKitStreamView: View {
             hideTimer = nil
             hideControls = false
 
-            openedMainAfterDisconnect = false
+            isReturningToMainMenu = false
 
             applyDefaultDisplayParams()
 
@@ -1146,15 +1142,14 @@ struct _RealityKitStreamView: View {
             // In immersive mode, "Home" should open the main menu and hide the stream
             viewModel.isHidingForResume = true
             viewModel.savedStreamConfigForResume = streamConfig
-            openWindow(id: "mainView")
-            Task { await dismissImmersiveSpace() }
+            closeStreamSceneThenOpenMain()
         }
         controlState.closeAction = { [self] in
             viewModel.savedStreamConfigForResume = nil
             needsResume = false
             hasPerformedTeardown = false
             viewModel.streamState = .stopping
-            performCompleteTeardown()
+            triggerCloseSequence()
         }
         
         controlState.toggleKeyboardAction = { [self] in
@@ -2507,7 +2502,23 @@ struct _RealityKitStreamView: View {
         }
     }
     
-    @State private var openedMainAfterDisconnect = false
+    /// Close the stream scene before opening the menu. visionOS places a newly opened
+    /// window around existing scene geometry, so the reverse order strands the menu low
+    /// and close to the user's feet after a large volume or immersive stream.
+    private func closeStreamSceneThenOpenMain() {
+        guard !isReturningToMainMenu else { return }
+        isReturningToMainMenu = true
+
+        Task { @MainActor in
+            if isImmersive {
+                await dismissImmersiveSpace()
+            } else {
+                dismissWindow(id: "realitykitStreamingWindow")
+            }
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            openWindow(id: "mainView")
+        }
+    }
     
     private func triggerCloseSequence() {
         performCompleteTeardown()
@@ -2515,15 +2526,11 @@ struct _RealityKitStreamView: View {
 
         if isImmersive {
             if lastStreamErrorMessage == nil {
-                openWindow(id: "mainView")
-                Task {
-                    await dismissImmersiveSpace()
-                }
+                closeStreamSceneThenOpenMain()
             }
             // When lastStreamErrorMessage != nil, keep immersive space open to show error overlay; user taps 关闭 to dismiss
         } else {
-            // Use dismissWindow(id:) without value: StreamConfiguration lacks Hashable, value-based dismiss fails to match
-            dismissWindow(id: "realitykitStreamingWindow")
+            closeStreamSceneThenOpenMain()
         }
     }
     

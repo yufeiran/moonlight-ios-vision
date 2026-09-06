@@ -26,6 +26,33 @@ public enum AV1FormatDescriptionError: Error {
     case cmCreationFailed(OSStatus)
 }
 
+/// Objective-C bridge used by the classic window renderer. Keeping AV1 parsing
+/// here avoids the mismatched FFmpeg private headers shipped by the upstream
+/// repository while sharing the same format-description path as RealityKit.
+@objc(MLAV1FormatDescriptionBuilder)
+public final class MLAV1FormatDescriptionBuilder: NSObject {
+    @objc(createFromIDR:masteringDisplayColorVolume:contentLightLevelInfo:)
+    public static func create(
+        fromIDR frameData: Data,
+        masteringDisplayColorVolume: Data?,
+        contentLightLevelInfo: Data?
+    ) -> CMVideoFormatDescription? {
+        var bytes = [UInt8](frameData)
+        do {
+            return try bytes.withUnsafeMutableBufferPointer { buffer in
+                try CMVideoFormatDescriptionCreateFromAV1SequenceHeaderOBUWithAV1C(
+                    buffer,
+                    masteringDisplayColorVolume: masteringDisplayColorVolume,
+                    contentLightLevelInfo: contentLightLevelInfo
+                ) as CMVideoFormatDescription
+            }
+        } catch {
+            print("MLAV1FormatDescriptionBuilder: \(error)")
+            return nil
+        }
+    }
+}
+
 /// Struct of the parsed info we need for av1C + dimensions
 fileprivate struct AV1SequenceInfo {
     var seq_profile: Int
@@ -108,7 +135,11 @@ let MC_ICTCP = 14
 
 /// Create a CMVideo/CMFormatDescription for AV1 from concatenated OBUs,
 /// building and attaching an `av1C` payload into the SampleDescriptionExtensionAtoms.
-public func CMVideoFormatDescriptionCreateFromAV1SequenceHeaderOBUWithAV1C(_ obuData: UnsafeMutableBufferPointer<UInt8>) throws -> CMFormatDescription {
+public func CMVideoFormatDescriptionCreateFromAV1SequenceHeaderOBUWithAV1C(
+    _ obuData: UnsafeMutableBufferPointer<UInt8>,
+    masteringDisplayColorVolume: Data? = nil,
+    contentLightLevelInfo: Data? = nil
+) throws -> CMFormatDescription {
     guard let seqRange = findSequenceHeaderOBURange(in: obuData) else {
         throw AV1FormatDescriptionError.sequenceHeaderNotFound
     }
@@ -151,6 +182,9 @@ public func CMVideoFormatDescriptionCreateFromAV1SequenceHeaderOBUWithAV1C(_ obu
         TC_BT_2020_12_BIT : kCVImageBufferTransferFunction_ITU_R_2020,
         TC_BT_601 : kCVImageBufferTransferFunction_sRGB,
         TC_SRGB : kCVImageBufferTransferFunction_sRGB,
+        TC_LINEAR : kCVImageBufferTransferFunction_Linear,
+        TC_SMPTE_2084 : kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ,
+        TC_HLG : kCVImageBufferTransferFunction_ITU_R_2100_HLG,
     ]
     let mMap: [Int: CFString] = [
         MC_BT_709 : kCVImageBufferYCbCrMatrix_ITU_R_709_2,
@@ -170,6 +204,12 @@ public func CMVideoFormatDescriptionCreateFromAV1SequenceHeaderOBUWithAV1C(_ obu
     extensions[kCMFormatDescriptionExtension_Depth] = (seqInfo.bitsPerComponent * 3) as NSNumber
     extensions[kCMFormatDescriptionExtension_FormatName] = "av01" as NSString
     extensions[kCMFormatDescriptionExtension_FullRangeVideo] = seqInfo.isFullRange as NSNumber
+    if let masteringDisplayColorVolume {
+        extensions[kCMFormatDescriptionExtension_MasteringDisplayColorVolume as NSString] = masteringDisplayColorVolume as NSData
+    }
+    if let contentLightLevelInfo {
+        extensions[kCMFormatDescriptionExtension_ContentLightLevelInfo as NSString] = contentLightLevelInfo as NSData
+    }
     extensions[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] = atomsDict as CFDictionary
 
     let status = CMVideoFormatDescriptionCreate(

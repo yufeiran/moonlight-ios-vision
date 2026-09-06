@@ -8,6 +8,7 @@
 
 #import "AV1Helper.h"
 #include <libavcodec/avcodec.h>
+#include <libavcodec/codec_desc.h>
 #include <libavcodec/cbs.h>
 #include <libavcodec/cbs_av1.h>
 #include <libavformat/avio.h>
@@ -52,7 +53,15 @@ extern int ff_isom_write_av1c(AVIOContext *pb, const uint8_t *buf, int size, int
     NSMutableDictionary *extensions = [[NSMutableDictionary alloc] init];
 
     CodedBitstreamContext *cbsCtx = NULL;
-    int err = ff_cbs_init(&cbsCtx, AV_CODEC_ID_AV1, NULL);
+    // The prebuilt FFmpeg libraries in this branch are newer than the bundled
+    // public headers, so AV_CODEC_ID_AV1 has a different numeric value. Resolve
+    // the ID by name inside the linked library instead of using the stale enum.
+    const AVCodecDescriptor *av1Descriptor = avcodec_descriptor_get_by_name("av1");
+    if (av1Descriptor == NULL) {
+        NSLog(@"[AV1Helper] FFmpeg AV1 descriptor is unavailable");
+        return nil;
+    }
+    int err = ff_cbs_init(&cbsCtx, av1Descriptor->id, NULL);
     if (err < 0) {
         NSLog(@"[AV1Helper] ff_cbs_init() failed: %d", err);
         return nil;
