@@ -6,6 +6,18 @@ It also supports a Sunshine fork called [Apollo](https://github.com/ClassicOldSo
 
 Moonlight also has a [PC client](https://github.com/moonlight-stream/moonlight-qt) and [Android client](https://github.com/moonlight-stream/moonlight-android).
 
+### Yu Moonlight build 26
+
+Backports the common library's [speculative RFI fix](https://github.com/moonlight-stream/moonlight-common-c/commit/62e066388f1a1b133e0bee947b9a374311a3354b). When reference-frame invalidation (RFI) is unavailable, a reordered packet could previously trigger an IDR wait without requesting a keyframe, dropping up to 120 consecutive frames. The fix only enables speculative loss reporting when RFI is negotiated; normal FEC, actual-loss recovery, and enabled RFI behavior remain intact.
+
+The common submodule points to a minimal backport in `yufeiran/moonlight-common-c`, based on the existing `a517f7c` revision. Clone recursively so the fix is included. To run the native macOS regression harness with address/undefined-behavior sanitizers:
+
+```sh
+sh Tests/run-video-reorder-regression.sh
+```
+
+The harness sends synthetic RTP packets through the real FEC queue and depacketizer, covering host/decoder RFI availability, reordered complete frames, sequence wraparound, actual packet loss, and RFI recovery.
+
 Check out [the Moonlight wiki](https://github.com/moonlight-stream/moonlight-docs/wiki) for more detailed project information, setup guide, or troubleshooting steps. Also check out the [discord](https://moonlight-stream.org/discord).
 
 ### Credits
