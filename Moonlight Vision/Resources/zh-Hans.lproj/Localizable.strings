@@ -69,7 +69,7 @@
 
 // Stream Status
 "stream_stopped" = "串流已停止";
-"stream_stopped_message" = "在返回主菜单前请先关闭此窗口，之后即可在主菜单重新启动串流。";
+"stream_stopped_message" = "点击“打开主菜单”返回并重新启动串流，无需强制关闭应用。";
 "reconnecting" = "正在重连…";
 "reconnect_attempt" = "第 %d/%d 次尝试";
 "open_main_menu" = "打开主菜单";

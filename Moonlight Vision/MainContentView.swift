@@ -16,6 +16,7 @@ struct MainContentView: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
+    @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var selectedHost: TemporaryHost?
@@ -108,19 +109,10 @@ struct MainContentView: View {
                         ToolbarItem(placement: .destructiveAction) {
                             Button(viewModel.localized("stop"), systemImage: "stop.circle.fill") {
                                 Task {
-                                    // Post notification first — RealityKitStreamView/UIKitStreamView
-                                    // receive it and call triggerCloseSequence/teardown which handles
-                                    // dismissing their own window. Avoid calling dismissWindow here for
-                                    // RealityKit volume streams: the stream view dismisses itself via
-                                    // triggerCloseSequence, and a second dismissWindow call racing with
-                                    // an in-flight window animation can cause intermittent crashes.
-                                    NotificationCenter.default.post(name: Notification.Name("RequestStreamCloseFromMainMenu"), object: nil)
+                                    // Capture the host quit request before renderer teardown changes
+                                    // lifecycle state. The menu closes the source only after appearing.
                                     viewModel.userDidRequestDisconnect()
-                                    // Classic UIKit window doesn't observe the notification for self-dismiss,
-                                    // so we still need to dismiss it from here.
-                                    if viewModel.streamSettings.renderer == .classic {
-                                        dismissWindow(id: "classicStreamingWindow")
-                                    }
+                                    NotificationCenter.default.post(name: Notification.Name("RequestStreamCloseFromMainMenu"), object: nil)
                                     await viewModel.waitForTeardown(timeout: 1.2)
                                     if viewModel.streamState != .idle {
                                         viewModel.forceResetStreamLifecycleIfNeeded()
@@ -246,6 +238,25 @@ struct MainContentView: View {
         .sheet(isPresented: $viewModel.showLanguagePrompt) {
             LanguagePromptView()
                 .environmentObject(viewModel)
+        }
+        .onAppear { finishStoppedStreamWindowTransition() }
+        .onChange(of: viewModel.stoppedStreamSceneAwaitingMenu) { _, _ in
+            finishStoppedStreamWindowTransition()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { finishStoppedStreamWindowTransition() }
+        }
+    }
+
+    private func finishStoppedStreamWindowTransition() {
+        guard scenePhase == .active,
+              let scene = viewModel.stoppedStreamSceneAwaitingMenu else { return }
+        print("[WindowRecovery] Main menu active; dismissing stopped \(scene) scene")
+        viewModel.stoppedStreamSceneAwaitingMenu = nil
+        if let windowID = scene.windowID {
+            dismissWindow(id: windowID)
+        } else {
+            Task { await dismissImmersiveSpace() }
         }
     }
 

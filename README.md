@@ -6,7 +6,20 @@ It also supports a Sunshine fork called [Apollo](https://github.com/ClassicOldSo
 
 Moonlight also has a [PC client](https://github.com/moonlight-stream/moonlight-qt) and [Android client](https://github.com/moonlight-stream/moonlight-android).
 
-### Yu Moonlight build 26
+### Yu Moonlight build 27
+
+Fixes stopped/error-page menu recovery independently of idempotent stream teardown.
+Classic windows use `pushWindow` to preserve their position; the active singleton
+menu acknowledges the transition before closing the stopped source scene. This also
+avoids dismissing visionOS's last scene, and keeps Stop/Resume receivers alive on the
+stopped page. Home navigation no longer tears down a merely backgrounded live stream.
+The same destination acknowledgement is used for RealityKit volumes/immersive spaces.
+
+```sh
+sh Tests/run-stream-window-recovery-regression.sh
+```
+
+Build 27 also includes the following build 26 fix.
 
 Backports the common library's [speculative RFI fix](https://github.com/moonlight-stream/moonlight-common-c/commit/62e066388f1a1b133e0bee947b9a374311a3354b). When reference-frame invalidation (RFI) is unavailable, a reordered packet could previously trigger an IDR wait without requesting a keyframe, dropping up to 120 consecutive frames. The fix only enables speculative loss reporting when RFI is negotiated; normal FEC, actual-loss recovery, and enabled RFI behavior remain intact.
 

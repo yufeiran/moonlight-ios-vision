@@ -21,7 +21,7 @@ struct UIKitStreamView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var hasPerformedTeardown = false
+    @State private var windowRecovery = StreamWindowRecoveryState()
     @State private var needsResume = false
     @State private var reloadToken = UUID()
     @State private var backgroundTask: Task<Void, Never>?
@@ -36,7 +36,6 @@ struct UIKitStreamView: View {
     @State private var centerHintText: String = ""
     @State private var centerHintIcon: String = "info.circle"
     @State private var centerHintTask: Task<Void, Never>?
-    @State private var isReturningToMainMenu = false
     private let uikitMaxReconnectAttempts = 3
     private let uikitReconnectDelaySeconds: TimeInterval = 2.5
 
@@ -157,7 +156,7 @@ struct UIKitStreamView: View {
                         .padding(.bottom, 20)
                     }
                     .onAppear {
-                        hasPerformedTeardown = false
+                        windowRecovery = StreamWindowRecoveryState()
                         
                         // Zombie / Resume Fix:
                         // If we appear but shouldn't be streaming, close immediately.
@@ -166,7 +165,7 @@ struct UIKitStreamView: View {
                             // We don't show the "Stream Stopped" error here because the user likely just
                             // restarted the app or came back from a long sleep.
                             streamConfig = nil
-                            closeUIKitWindowThenOpenMain()
+                            returnToMainMenuAfterStreamStopped()
                         } else {
                             dismissWindow(id: "mainView")
                             startWindowSizeMonitoring()
@@ -174,7 +173,6 @@ struct UIKitStreamView: View {
                     }
                     .onDisappear {
                         stopWindowSizeMonitoring()
-                        handleWindowDisappearance()
                     }
                     .onChange(of: scenePhase) { _, phase in
                         switch phase {
@@ -186,19 +184,6 @@ struct UIKitStreamView: View {
                         default:
                             break
                         }
-                    }
-                    .onChange(of: viewModel.shouldCloseStream) { _, val in
-                        if val { handleCloseFromViewModel() }
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestStreamCloseFromMainMenu"))) { _ in
-                        handleCloseFromViewModel()
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ResumeStreamFromMenu"))) { _ in
-                        isReturningToMainMenu = false
-                        viewModel.isHidingForResume = false
-                        dismissWindow(id: "mainView")
-                        let currentMode = SpatialAudioMode(rawValue: viewModel.streamSettings.spatialAudioMode) ?? .window
-                        AudioHelpers.applySpatialAudioMode(currentMode)
                     }
                     .onReceive(NotificationCenter.default.publisher(for: Notification.Name("MainViewWindowClosed"))) { _ in
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -219,10 +204,7 @@ struct UIKitStreamView: View {
                             .padding(.horizontal)
                         
                         Button {
-                            lastStreamErrorMessage = nil
-                            viewModel.streamState = .stopping
-                            viewModel.savedStreamConfigForResume = nil
-                            performUIKitTeardown()
+                            returnToMainMenuAfterStreamStopped()
                         } label: {
                             Label(viewModel.localized("open_main_menu"), systemImage: "house.fill")
                                 .frame(maxWidth: .infinity)
@@ -239,6 +221,23 @@ struct UIKitStreamView: View {
                 }
             }
         }
+        // Keep lifecycle receivers on the scene root: the stopped/error branch
+        // must receive Stop/Resume events too, not only the live UIKit controller.
+        .onChange(of: viewModel.shouldCloseStream) { _, shouldClose in
+            if shouldClose { handleCloseFromViewModel() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestStreamCloseFromMainMenu"))) { _ in
+            handleCloseFromViewModel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ResumeStreamFromMenu"))) { _ in
+            guard viewModel.activelyStreaming else { return }
+            windowRecovery.didResumeStream()
+            viewModel.isHidingForResume = false
+            dismissWindow(id: "mainView")
+            let currentMode = SpatialAudioMode(rawValue: viewModel.streamSettings.spatialAudioMode) ?? .window
+            AudioHelpers.applySpatialAudioMode(currentMode)
+        }
+        .onDisappear { handleWindowDisappearance() }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UIKitStreamErrorNotification"))) { notification in
             if let msg = notification.userInfo?["message"] as? String {
                 lastStreamErrorMessage = msg
@@ -336,10 +335,7 @@ struct UIKitStreamView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
             Button {
-                lastStreamErrorMessage = nil
-                viewModel.savedStreamConfigForResume = nil
-                viewModel.streamState = .stopping
-                performUIKitTeardown()
+                returnToMainMenuAfterStreamStopped()
             } label: {
                 Label(viewModel.localized("open_main_menu"), systemImage: "house.fill")
                     .padding(.horizontal, 16)
@@ -395,40 +391,44 @@ struct UIKitStreamView: View {
     /// either scene. visionOS keeps the stream window's transform and restores it
     /// when the pushed menu is dismissed.
     private func pushMainMenuOverStream() {
-        guard !isReturningToMainMenu else { return }
-        isReturningToMainMenu = true
+        guard windowRecovery.beginLiveMenuPresentation() else { return }
         viewModel.mainMenuPresentedOverStream = true
         pushWindow(id: "mainView")
     }
 
-    /// Error/stop recovery path. Normal Home navigation uses pushWindow above.
-    private func closeUIKitWindowThenOpenMain(delayBeforeDismiss: UInt64 = 0) {
-        guard !isReturningToMainMenu else { return }
-        isReturningToMainMenu = true
-
-        Task { @MainActor in
-            viewModel.mainMenuPresentedOverStream = false
-            if delayBeforeDismiss > 0 {
-                try? await Task.sleep(nanoseconds: delayBeforeDismiss)
-            }
-            dismissWindow(id: "classicStreamingWindow")
-            try? await Task.sleep(nanoseconds: 350_000_000)
+    /// Recovery navigation is deliberately NOT guarded by resource teardown.
+    /// Push the menu into the stream's position before closing the source scene.
+    /// The menu acknowledges its appearance and dismisses the dead stream itself.
+    private func returnToMainMenuAfterStreamStopped() {
+        let presentation = windowRecovery.stoppedMenuPresentation(
+            menuAlreadyPushed: viewModel.mainMenuPresentedOverStream
+        )
+        lastStreamErrorMessage = nil
+        viewModel.savedStreamConfigForResume = nil
+        if !windowRecovery.hasPerformedTeardown {
+            viewModel.streamState = .stopping
+        }
+        performUIKitTeardown()
+        viewModel.requestMainMenuAfterStreamStop(from: .classic)
+        switch presentation {
+        case .push:
+            pushWindow(id: "mainView")
+        case .activate:
             openWindow(id: "mainView")
         }
     }
 
     private func handleHomeButtonClose() {
         print("[UIKitStreamView] Home button pressed.")
-        performUIKitTeardown()
+        returnToMainMenuAfterStreamStopped()
     }
 
     private func handleCloseFromViewModel() {
-        performUIKitTeardown()
+        returnToMainMenuAfterStreamStopped()
     }
 
     private func performUIKitTeardown() {
-        guard !hasPerformedTeardown else { return }
-        hasPerformedTeardown = true
+        guard windowRecovery.beginTeardown() else { return }
         needsResume = false
 
         let wasHidingForResume = viewModel.isHidingForResume
@@ -455,9 +455,6 @@ struct UIKitStreamView: View {
 
         streamConfig = nil
 
-        // Give the UIKit controller a moment to begin its asynchronous shutdown,
-        // then remove its window before asking visionOS to place the main menu.
-        closeUIKitWindowThenOpenMain(delayBeforeDismiss: 150_000_000)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             NotificationCenter.default.post(name: Notification.Name("StreamDidTeardownNotification"), object: nil)
         }
@@ -465,12 +462,17 @@ struct UIKitStreamView: View {
 
     private func handleWindowDisappearance() {
         // This handles when the user closes the window via the "X" bar or system gesture
-        guard !hasPerformedTeardown else { return }
+        guard !windowRecovery.hasPerformedTeardown else { return }
+        // pushWindow backgrounds the live stream; this is navigation, not Stop.
+        guard !viewModel.mainMenuPresentedOverStream,
+              !viewModel.isHidingForResume else { return }
 
         // If we are disappearing but activelyStreaming is true, it means the user closed the window manually.
         // We should clean up the stream logic.
         if viewModel.activelyStreaming {
             performUIKitTeardown()
+            viewModel.requestMainMenuAfterStreamStop(from: .classic)
+            openWindow(id: "mainView")
         }
     }
     
@@ -537,8 +539,10 @@ struct UIKitStreamView: View {
     }
     
     private func prepareForBackground() {
-        guard !hasPerformedTeardown else { return }
+        guard !windowRecovery.hasPerformedTeardown else { return }
         guard streamConfig != nil else { return }
+        guard !viewModel.mainMenuPresentedOverStream,
+              !viewModel.isHidingForResume else { return }
         
         saveCurrentWindowSize()
         backgroundTask?.cancel()

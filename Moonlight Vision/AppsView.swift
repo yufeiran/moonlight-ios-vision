@@ -208,8 +208,8 @@ struct AppsView: View {
     @MainActor
     private func stopStreamFromMainMenu() async {
         viewModel.mainMenuPresentedOverStream = false
-        NotificationCenter.default.post(name: Notification.Name("RequestStreamCloseFromMainMenu"), object: nil)
         viewModel.userDidRequestDisconnect()
+        NotificationCenter.default.post(name: Notification.Name("RequestStreamCloseFromMainMenu"), object: nil)
         await viewModel.waitForTeardown(timeout: 1.2)
         if viewModel.streamState != .idle {
             viewModel.forceResetStreamLifecycleIfNeeded()

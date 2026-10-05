@@ -33,7 +33,6 @@ struct RealityKitStreamView: View {
     @Binding var streamConfig: StreamConfiguration?
     var needsHdr: Bool
     var isImmersive: Bool
-    @State private var isRedirectingToMainMenu = false
     
     var body: some View {
         if let config = streamConfig {
@@ -99,23 +98,10 @@ struct RealityKitStreamView: View {
 
     /// Open the main menu window and close this dead streaming window/space.
     private func redirectZombieToMainMenu() {
-        guard !isRedirectingToMainMenu else { return }
-        isRedirectingToMainMenu = true
         viewModel.savedStreamConfigForResume = nil
         streamConfig = nil
-        Task { @MainActor in
-            viewModel.mainMenuPresentedOverStream = false
-            // Close the large stream scene first. Opening the menu while it still occupies
-            // the user's forward space makes visionOS collision avoidance put the menu near
-            // the floor and too close to the user.
-            if isImmersive {
-                await dismissImmersiveSpace()
-            } else {
-                dismissWindow(id: "realitykitStreamingWindow")
-            }
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            openWindow(id: "mainView")
-        }
+        viewModel.requestMainMenuAfterStreamStop(from: isImmersive ? .immersive : .realityKitVolume)
+        openWindow(id: "mainView")
     }
 }
 
@@ -2503,23 +2489,12 @@ struct _RealityKitStreamView: View {
         }
     }
     
-    /// Close the stream scene before opening the menu. visionOS places a newly opened
-    /// window around existing scene geometry, so the reverse order strands the menu low
-    /// and close to the user's feet after a large volume or immersive stream.
+    /// Never dismiss the app's last scene. The active menu acknowledges this request
+    /// and closes the volume/space, without arbitrary animation sleeps or a stale guard.
     private func closeStreamSceneThenOpenMain() {
-        guard !isReturningToMainMenu else { return }
         isReturningToMainMenu = true
-
-        Task { @MainActor in
-            viewModel.mainMenuPresentedOverStream = false
-            if isImmersive {
-                await dismissImmersiveSpace()
-            } else {
-                dismissWindow(id: "realitykitStreamingWindow")
-            }
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            openWindow(id: "mainView")
-        }
+        viewModel.requestMainMenuAfterStreamStop(from: isImmersive ? .immersive : .realityKitVolume)
+        openWindow(id: "mainView")
     }
     
     private func triggerCloseSequence() {

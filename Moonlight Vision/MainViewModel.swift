@@ -62,6 +62,9 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     /// True when the main menu was pushed over a still-live plain stream window.
     /// Dismissing that one menu restores the exact same window and placement.
     @Published var mainMenuPresentedOverStream = false
+    // The destination menu acknowledges this request only once it is active.
+    // visionOS ignores attempts to close the app's last scene.
+    @Published var stoppedStreamSceneAwaitingMenu: StoppedStreamScene? = nil
     
     // Flag to indicate if we are hiding the stream to resume later
     @Published var isHidingForResume: Bool = false
@@ -203,7 +206,7 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     
     func userDidRequestDisconnect() {
         activelyStreaming = false
-        DispatchQueue.main.async { self.beginDisconnect() }
+        beginDisconnect()
     }
     
     private func beginDisconnect() {
@@ -286,6 +289,13 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         currentlyStreamingAppId = nil
         reconnectCooldownUntil = nil
         activelyStreaming = false
+    }
+
+    func requestMainMenuAfterStreamStop(from scene: StoppedStreamScene) {
+        print("[WindowRecovery] Request main menu from \(scene)")
+        mainMenuPresentedOverStream = false
+        isHidingForResume = false
+        stoppedStreamSceneAwaitingMenu = scene
     }
 
     // Computed property to filter hosts based on pairState and remove duplicates
