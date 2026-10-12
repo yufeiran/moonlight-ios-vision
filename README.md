@@ -6,6 +6,25 @@ It also supports a Sunshine fork called [Apollo](https://github.com/ClassicOldSo
 
 Moonlight also has a [PC client](https://github.com/moonlight-stream/moonlight-qt) and [Android client](https://github.com/moonlight-stream/moonlight-android).
 
+### Yu Moonlight build 29 — experimental low-latency rendering
+
+On visionOS 27 physical devices, RealityKit streaming uses shared GPU-private
+Metal textures and `LowLevelDeviceResource` / `LowLevelTexture.replace` rather
+than `DrawableQueue`. Command-buffer dependencies synchronize the producer with
+RealityKit. GPU work is bounded to two frames; the shared path skips full-resolution
+mipmap generation and reactive ambilight. Older systems/simulator/shared-allocation
+failures retain the previous DrawableQueue path. UIKit keeps its ordinary window
+and explicitly marks live samples `DisplayImmediately`.
+
+Both renderers continue consuming in common run-loop modes while UI controls are
+tracked. RealityKit requests real-time hardware decoding and reuses compatible
+decoder sessions across IDRs. This is an experimental pipeline, not a claim of
+measured end-to-end latency or equivalence to Apple's Mac Virtual Display.
+
+For the new shared-texture API, select **RealityKit** streaming (volume or immersive),
+not UIKit. The companion local Sunshine source is in `../sunshine-yu`, using
+ScreenCaptureKit with queueDepth=2 and the existing VideoToolbox/NV12 encode path.
+
 ### Yu Moonlight build 28
 
 Preserves the main menu's original system window during UIKit, RealityKit volume,

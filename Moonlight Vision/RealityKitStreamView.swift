@@ -2420,7 +2420,9 @@ struct _RealityKitStreamView: View {
                                 if let correctedResolution { 
                                     self.correctedResolution = correctedResolution 
                                 }
-                                self.texture.replace(withDrawables: textureQueue)
+                                if let textureQueue {
+                                    self.texture.replace(withDrawables: textureQueue)
+                                }
                                 
                                 if let ambilightQueue {
                                     if self.ambilightTexture == nil {

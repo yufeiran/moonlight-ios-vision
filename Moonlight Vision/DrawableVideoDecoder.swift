@@ -28,6 +28,43 @@ let kCVPixelBufferYCbCrMatrixKey = "YCbCrMatrix" as CFString
 let kCVPixelBufferColorPrimariesKey = "ColorPrimaries" as CFString
 let kCVPixelBufferTransferFunctionKey = "TransferFunction" as CFString
 
+// Apple's visionOS 27 connected-video technique also accepts decoded network frames.
+// Both resource objects share one GPU-private allocation; alternating their identity
+// tells RealityKit to refresh without a DrawableQueue handoff or texture copy.
+@available(visionOS 27.0, *)
+@MainActor
+private final class SharedLowLatencyVideoTexture {
+    let metalTexture: MTLTexture
+    let lowLevelTexture: LowLevelTexture
+    private let first: LowLevelDeviceResource
+    private let second: LowLevelDeviceResource
+    private var useFirst = false
+
+    enum CreationError: Error { case sharedTextureUnavailable }
+
+    init(device: MTLDevice, width: Int, height: Int, pixelFormat: MTLPixelFormat) throws {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: pixelFormat, width: width, height: height, mipmapped: false
+        )
+        descriptor.storageMode = .private
+        descriptor.usage = [.renderTarget, .shaderRead, .shaderWrite, .pixelFormatView]
+        guard let texture = device.makeSharedTexture(descriptor: descriptor),
+              let handle = texture.makeSharedTextureHandle() else {
+            throw CreationError.sharedTextureUnavailable
+        }
+        metalTexture = texture
+        first = try LowLevelDeviceResource(sharedTextureHandle: handle)
+        second = try LowLevelDeviceResource(sharedTextureHandle: handle)
+        lowLevelTexture = try LowLevelTexture(descriptor: .init(descriptor))
+        lowLevelTexture.replace(deviceResource: first)
+    }
+
+    func publish(using commandBuffer: MTLCommandBuffer) {
+        useFirst.toggle()
+        lowLevelTexture.replace(deviceResource: useFirst ? second : first, using: commandBuffer)
+    }
+}
+
 struct HDRParams {
     var boost: Float
     var contrast: Float
@@ -71,7 +108,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
     private var callbacks: ConnectionCallbacks
     private var streamAspectRatio: Float
 
-    let callbackToRender: @MainActor (TextureResource.DrawableQueue, TextureResource.DrawableQueue?, (Int, Int)?) -> Void
+    let callbackToRender: @MainActor (TextureResource.DrawableQueue?, TextureResource.DrawableQueue?, (Int, Int)?) -> Void
     let debugInfoCallback: (@MainActor (String) -> Void)?
     private var hdrSettingsProvider: (() -> HDRParams)? = nil
 
@@ -106,12 +143,15 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
     var textureCache: CVMetalTextureCache?
     var drawableQueue: TextureResource.DrawableQueue?
     var ambilightQueue: TextureResource.DrawableQueue?
+    private var sharedRenderTexture: MTLTexture?
+    private var submitSharedFrame: ((MTLCommandBuffer) -> Void)?
     var enableAmbilight: Bool = true
 
     var session: VTDecompressionSession?
     var decoderCallback: VTDecompressionOutputCallbackRecord
     
-    private let inflightSemaphore = DispatchSemaphore(value: 3)
+    // Bound GPU work; do not turn a busy compositor into an ever-growing frame queue.
+    private let inflightSemaphore = DispatchSemaphore(value: 2)
     lazy var mtlDevice: MTLDevice = {
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError()
@@ -153,7 +193,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         enhancementsProvider: (() -> (Float, Float, Float))? = nil,
         isVolumeModeProvider: (() -> Bool)? = nil,
         enableAmbilightProvider: (() -> Bool)? = nil,
-        callbackToRender: @MainActor @escaping (TextureResource.DrawableQueue, TextureResource.DrawableQueue?, (Int, Int)?) -> Void,
+        callbackToRender: @MainActor @escaping (TextureResource.DrawableQueue?, TextureResource.DrawableQueue?, (Int, Int)?) -> Void,
         debugInfoCallback: (@MainActor (String) -> Void)? = nil
     ) {
         metalFormat = enableHDR ? .rgba16Float : .bgra8Unorm_srgb
@@ -233,7 +273,8 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             return
         }
         
-        commandBuffer.addCompletedHandler { [weak self] _ in
+        commandBuffer.addCompletedHandler { [weak self, imageBuffer] _ in
+            withExtendedLifetime(imageBuffer) {}
             self?.inflightSemaphore.signal()
         }
 
@@ -333,9 +374,9 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             }
         }()
 
-        guard
-            let drawable = try? drawableQueue?.nextDrawable()
-        else {
+        let drawable: TextureResource.Drawable? = sharedRenderTexture == nil
+            ? (try? drawableQueue?.nextDrawable()) : nil
+        guard let renderTexture = sharedRenderTexture ?? drawable?.texture else {
             commandBuffer.commit()
             return
         }
@@ -401,7 +442,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         }
 
         let renderPassDescriptor = MTLRenderPassDescriptor()
-        renderPassDescriptor.colorAttachments[0].texture = drawable.texture
+        renderPassDescriptor.colorAttachments[0].texture = renderTexture
         renderPassDescriptor.colorAttachments[0].loadAction = .dontCare
         renderPassDescriptor.colorAttachments[0].storeAction = .store
 
@@ -524,15 +565,15 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         renderEncoder.endEncoding()
 
-        if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
-            blitEncoder.generateMipmaps(for: drawable.texture)
+        if renderTexture.mipmapLevelCount > 1, let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+            blitEncoder.generateMipmaps(for: renderTexture)
             blitEncoder.endEncoding()
         }
         
         let ambEnabled = enableAmbilightProvider?() ?? enableAmbilight
         if let ambQueue = ambilightQueue, ambEnabled, let ambDrawable = try? ambQueue.nextDrawable() {
             let targetMipLevel = 6
-            let mipLevel = min(targetMipLevel, drawable.texture.mipmapLevelCount - 1)
+            let mipLevel = min(targetMipLevel, renderTexture.mipmapLevelCount - 1)
             
             if ambilightPipelineState == nil {
                 ambilightPipelineState = buildCopyPipeline(fragment: "copyFragmentShaderAmbilight")
@@ -556,7 +597,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                     var isVolumeInt: Int32 = (self.isVolumeModeProvider?() ?? false) ? 1 : 0
                     ambRenderEncoder.setFragmentBytes(&isVolumeInt, length: MemoryLayout<Int32>.size, index: 1)
                     
-                    if let mipTextureView = drawable.texture.makeTextureView(pixelFormat: drawable.texture.pixelFormat, textureType: .type2D, levels: mipLevel..<mipLevel+1, slices: 0..<1) {
+                    if let mipTextureView = renderTexture.makeTextureView(pixelFormat: renderTexture.pixelFormat, textureType: .type2D, levels: mipLevel..<mipLevel+1, slices: 0..<1) {
                         ambRenderEncoder.setFragmentTexture(mipTextureView, index: 0)
                         ambRenderEncoder.setFragmentTexture(self.prevAmbilightTexture, index: 1)
                         ambRenderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
@@ -579,8 +620,12 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             ambDrawable.present()
         }
 
-        commandBuffer.commit()
-        drawable.present()
+        if let submitSharedFrame {
+            submitSharedFrame(commandBuffer)
+        } else {
+            commandBuffer.commit()
+            drawable?.present()
+        }
 
         if !firstFrameEmitted {
             firstFrameEmitted = true
@@ -597,6 +642,33 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                 print("Tried to set up client texture without defined dimensions (\(videoWidth), \(videoHeight)) - skipping")
                 return
             }
+
+            #if !targetEnvironment(simulator)
+            if #available(visionOS 27.0, *) {
+                do {
+                    let shared = try SharedLowLatencyVideoTexture(
+                        device: self.mtlDevice, width: self.videoWidth,
+                        height: self.videoHeight, pixelFormat: self.metalFormat
+                    )
+                    self.sharedRenderTexture = shared.metalTexture
+                    self.texture.replace(with: shared.lowLevelTexture)
+                    self.submitSharedFrame = { commandBuffer in
+                        DispatchQueue.main.async {
+                            // Register RealityKit's GPU dependency before committing the write.
+                            shared.publish(using: commandBuffer)
+                            commandBuffer.commit()
+                        }
+                    }
+                    self.drawableQueue = nil
+                    self.ambilightQueue = nil
+                    self.callbackToRender(nil, nil, (self.videoWidth, self.videoHeight))
+                    print("[LowLatency] Shared Metal → LowLevelDeviceResource active (no DrawableQueue/mipmap/ambilight pass)")
+                    return
+                } catch {
+                    print("[LowLatency] Shared texture unavailable; using DrawableQueue: \(error)")
+                }
+            }
+            #endif
 
             self.drawableQueue = {
                 let descriptor = TextureResource.DrawableQueue.Descriptor(
@@ -696,7 +768,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             displayLink?.preferredFramesPerSecond = Int(frameRate)
         }
 
-        displayLink?.add(to: .main, forMode: .default)
+        displayLink?.add(to: .main, forMode: .common)
     }
 
     func stop() {
@@ -718,6 +790,8 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             CVMetalTextureCacheFlush(cache, 0)
         }
         textureCache = nil
+        sharedRenderTexture = nil
+        submitSharedFrame = nil
         copyPipelineState = nil
         copyPipelineFormat = nil
         copyPipelineStateYUV = nil
@@ -796,6 +870,16 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                     ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
                     : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
 
+                // IDR refreshes are not a reason to leak/recreate a compatible
+                // decoder. Drain the old decoder only for a real format change.
+                if let session, VTDecompressionSessionCanAcceptFormatDescription(session, formatDescription: formatDesc) {
+                    return submitPictureBuffer(dataPtr, length: length, decodeUnit: decodeUnit)
+                }
+                if let previous = session {
+                    VTDecompressionSessionWaitForAsynchronousFrames(previous)
+                    VTDecompressionSessionInvalidate(previous)
+                    session = nil
+                }
                 var newSession: VTDecompressionSession?
                 let createStatus = VTDecompressionSessionCreate(
                     allocator: kCFAllocatorDefault,
@@ -811,6 +895,7 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
                     return DR_NEED_IDR
                 }
                 session = newSession
+                VTSessionSetProperty(newSession, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)
                 lastDecodeErrorStatus = nil
 
                 AudioHelpers.fixAudioForSurroundForCurrentWindow()
@@ -819,6 +904,10 @@ class DrawableVideoDecoder: NSObject, AnyVideoDecoderRenderer {
             }
         }
 
+        return submitPictureBuffer(dataPtr, length: length, decodeUnit: decodeUnit)
+    }
+
+    private func submitPictureBuffer(_ dataPtr: UnsafeMutablePointer<UInt8>, length: Int32, decodeUnit: PDECODE_UNIT) -> Int32 {
         guard let formatDesc = formatDesc else {
             return DR_NEED_IDR
         }
