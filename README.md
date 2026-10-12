@@ -6,6 +6,22 @@ It also supports a Sunshine fork called [Apollo](https://github.com/ClassicOldSo
 
 Moonlight also has a [PC client](https://github.com/moonlight-stream/moonlight-qt) and [Android client](https://github.com/moonlight-stream/moonlight-android).
 
+### Yu Moonlight build 28
+
+Preserves the main menu's original system window during UIKit, RealityKit volume,
+and immersive streams. Streaming hides its content (including hit testing and
+accessibility) without dismissing the scene or changing its layout. Return reveals
+and activates that same window, retaining its position and user-selected tilt,
+instead of creating a new menu relative to the stream/floor. Classic Home/Resume
+also retain the live stream window. A safely pushed menu is still available as a
+fallback when the original menu was explicitly closed or never opened by an intent.
+
+This retains the current scene; it does not read/save private spatial coordinates,
+track eye gaze, force a head-locked window, or override system recenter/room restoration.
+Arrange the menu comfortably once before streaming; subsequent returns reuse it.
+
+Build 28 includes the following build 27 recovery fix and build 26 common fix.
+
 ### Yu Moonlight build 27
 
 Fixes stopped/error-page menu recovery independently of idempotent stream teardown.

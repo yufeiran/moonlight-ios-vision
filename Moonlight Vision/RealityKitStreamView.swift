@@ -474,7 +474,7 @@ struct _RealityKitStreamView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .resumeStreamFromMenu)) { _ in
                 guard viewModel.activelyStreaming else { return }
-                dismissWindow(id: "mainView")
+                viewModel.hideMainMenuForStream()
                 isMenuOpen = false
                 withAnimation(.easeInOut(duration: 0.3)) {
                     hideControls = false
@@ -1005,7 +1005,7 @@ struct _RealityKitStreamView: View {
         startStreamIfNeeded()
 
         // Dismiss windows synchronously (no @State involved)
-        dismissWindow(id: "mainView")
+        viewModel.hideMainMenuForStream()
         dismissWindow(id: "dummy")
 
         // Defer all @State mutations to next runloop to avoid
@@ -1258,7 +1258,7 @@ struct _RealityKitStreamView: View {
         }
         if newValue {
             ensureStreamStartedIfNeeded()
-            dismissWindow(id: "mainView")
+            viewModel.hideMainMenuForStream()
         }
     }
 

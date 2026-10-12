@@ -103,7 +103,7 @@ struct MainContentView: View {
                                     Task { await openImmersiveSpace(id: id) }
                                 }
                                 
-                                dismissWindow(id: "mainView")
+                                viewModel.hideMainMenuForStream()
                             }
                         }
                         ToolbarItem(placement: .destructiveAction) {
@@ -239,17 +239,36 @@ struct MainContentView: View {
             LanguagePromptView()
                 .environmentObject(viewModel)
         }
-        .onAppear { finishStoppedStreamWindowTransition() }
+        .onAppear {
+            viewModel.mainMenuVisibility.windowDidAppear()
+            finishStoppedStreamWindowTransition()
+        }
+        .onDisappear { viewModel.mainMenuVisibility.windowDidDisappear() }
         .onChange(of: viewModel.stoppedStreamSceneAwaitingMenu) { _, _ in
             finishStoppedStreamWindowTransition()
         }
+        .onChange(of: viewModel.mainMenuVisibility.canAcknowledgeReturn) { _, canReturn in
+            if canReturn { finishStoppedStreamWindowTransition() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { finishStoppedStreamWindowTransition() }
+        }
+        // Observe visibility inside the EnvironmentObject consumer, not in the
+        // App's scene declaration. Opacity keeps layout and the system pose alive.
+        .opacity(viewModel.mainMenuVisibility.isHiddenForStream ? 0 : 1)
+        .allowsHitTesting(!viewModel.mainMenuVisibility.isHiddenForStream)
+        .accessibilityHidden(viewModel.mainMenuVisibility.isHiddenForStream)
+        .background {
+            MainMenuSceneIdentityReader { scene in
+                // UIKit attaches the probe during a SwiftUI update pass.
+                DispatchQueue.main.async { viewModel.registerMainMenuWindowScene(scene) }
+            }
         }
     }
 
     private func finishStoppedStreamWindowTransition() {
         guard scenePhase == .active,
+              viewModel.mainMenuVisibility.canAcknowledgeReturn,
               let scene = viewModel.stoppedStreamSceneAwaitingMenu else { return }
         print("[WindowRecovery] Main menu active; dismissing stopped \(scene) scene")
         viewModel.stoppedStreamSceneAwaitingMenu = nil
@@ -361,6 +380,30 @@ extension MainViewModel {
                 // Bounded volume (standard 3D window)
                 return .window(id: "realitykitStreamingWindow")
             }
+        }
+    }
+}
+
+private struct MainMenuSceneIdentityReader: UIViewRepresentable {
+    let onSceneFound: (UIWindowScene) -> Void
+
+    func makeUIView(context: Context) -> SceneProbe {
+        let view = SceneProbe()
+        view.isUserInteractionEnabled = false
+        view.onSceneFound = onSceneFound
+        return view
+    }
+
+    func updateUIView(_ uiView: SceneProbe, context: Context) {
+        uiView.onSceneFound = onSceneFound
+    }
+
+    final class SceneProbe: UIView {
+        var onSceneFound: ((UIWindowScene) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let scene = window?.windowScene { onSceneFound?(scene) }
         }
     }
 }

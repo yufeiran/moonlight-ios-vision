@@ -65,6 +65,8 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     // The destination menu acknowledges this request only once it is active.
     // visionOS ignores attempts to close the app's last scene.
     @Published var stoppedStreamSceneAwaitingMenu: StoppedStreamScene? = nil
+    @Published var mainMenuVisibility = MainMenuVisibilityState()
+    private var mainMenuSceneSessionID: String?
     
     // Flag to indicate if we are hiding the stream to resume later
     @Published var isHidingForResume: Bool = false
@@ -295,7 +297,29 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
         print("[WindowRecovery] Request main menu from \(scene)")
         mainMenuPresentedOverStream = false
         isHidingForResume = false
+        mainMenuVisibility.showForNavigation()
         stoppedStreamSceneAwaitingMenu = scene
+    }
+
+    func hideMainMenuForStream() {
+        // Do not dismiss the window: openWindow would otherwise re-place it
+        // relative to a volume/floor instead of preserving a reclining pose.
+        mainMenuVisibility.hideForStream()
+    }
+
+    func registerMainMenuWindowScene(_ scene: UIWindowScene) {
+        mainMenuSceneSessionID = scene.session.persistentIdentifier
+        if !mainMenuVisibility.hasWindow { mainMenuVisibility.windowDidAppear() }
+    }
+
+    var hasRetainedMainMenuWindow: Bool {
+        guard let sessionID = mainMenuSceneSessionID else { return false }
+        // A backgrounded view can disappear without its system scene being
+        // destroyed. Check scene identity rather than interpreting that as a
+        // reason to push/re-place the menu at the stream's center again.
+        return UIApplication.shared.connectedScenes.contains {
+            $0.session.persistentIdentifier == sessionID
+        }
     }
 
     // Computed property to filter hosts based on pairState and remove duplicates

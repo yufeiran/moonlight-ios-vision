@@ -192,16 +192,16 @@ struct AppsView: View {
 
         let settings = viewModel.streamSettings
         if settings.renderer == .realitykit && settings.realitykitImmersiveMode {
-            dismissWindow(id: "mainView")
+            viewModel.hideMainMenuForStream()
             _ = try? await openImmersiveSpace(id: "realitykitImmersiveSpace", value: saved)
         } else if settings.renderer == .realitykit {
             dismissWindow(id: "classicStreamingWindow")
             openWindow(id: "realitykitStreamingWindow", value: saved)
-            dismissWindow(id: "mainView")
+            viewModel.hideMainMenuForStream()
         } else {
             dismissWindow(id: "realitykitStreamingWindow")
             openWindow(id: "classicStreamingWindow", value: saved)
-            dismissWindow(id: "mainView")
+            viewModel.hideMainMenuForStream()
         }
     }
 
@@ -229,9 +229,9 @@ struct AppsView: View {
         // Dismiss existing stream windows before opening new one
         dismissWindow(id: "realitykitStreamingWindow")
         dismissWindow(id: "classicStreamingWindow")
+        viewModel.hideMainMenuForStream()
 
         if settings.renderer == .realitykit && settings.realitykitImmersiveMode {
-            dismissWindow(id: "mainView")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 Task {
                     _ = try? await openImmersiveSpace(id: "realitykitImmersiveSpace", value: config)
@@ -250,7 +250,6 @@ struct AppsView: View {
                         }
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        dismissWindow(id: "mainView")
                         clearNowLoading()
                     }
                 }

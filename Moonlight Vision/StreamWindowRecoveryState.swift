@@ -22,8 +22,8 @@ struct StreamWindowRecoveryState {
         return true
     }
 
-    mutating func stoppedMenuPresentation(menuAlreadyPushed: Bool) -> MenuPresentation {
-        let activateExisting = menuAlreadyPushed || isMenuPushed || isReturningAfterStop
+    mutating func stoppedMenuPresentation(menuAlreadyAvailable: Bool) -> MenuPresentation {
+        let activateExisting = menuAlreadyAvailable || isMenuPushed || isReturningAfterStop
         isReturningAfterStop = true
         isMenuPushed = false
         // Repeated recovery taps can bring the singleton menu forward, rather than
@@ -34,6 +34,21 @@ struct StreamWindowRecoveryState {
     mutating func didResumeStream() {
         isMenuPushed = false
     }
+}
+
+// Preserve the actual system window instead of attempting to serialize a pose
+// that visionOS does not expose to ordinary windows. Hiding content keeps its
+// layout, position and user-selected tilt intact within the current session.
+struct MainMenuVisibilityState: Equatable {
+    private(set) var hasWindow = false
+    private(set) var isHiddenForStream = false
+
+    var canAcknowledgeReturn: Bool { hasWindow && !isHiddenForStream }
+
+    mutating func windowDidAppear() { hasWindow = true }
+    mutating func windowDidDisappear() { hasWindow = false }
+    mutating func hideForStream() { isHiddenForStream = true }
+    mutating func showForNavigation() { isHiddenForStream = false }
 }
 
 enum StoppedStreamScene: Equatable {

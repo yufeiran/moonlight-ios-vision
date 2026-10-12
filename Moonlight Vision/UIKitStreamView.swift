@@ -113,7 +113,7 @@ struct UIKitStreamView: View {
                             homeAction: { 
                                 viewModel.isHidingForResume = true
                                 viewModel.savedStreamConfigForResume = configBinding.wrappedValue
-                                pushMainMenuOverStream()
+                                showMainMenuForResume()
                             },
                             closeAction: { handleHomeButtonClose() },
                             toggleKeyboardAction: {
@@ -167,7 +167,7 @@ struct UIKitStreamView: View {
                             streamConfig = nil
                             returnToMainMenuAfterStreamStopped()
                         } else {
-                            dismissWindow(id: "mainView")
+                            viewModel.hideMainMenuForStream()
                             startWindowSizeMonitoring()
                         }
                     }
@@ -221,6 +221,12 @@ struct UIKitStreamView: View {
                 }
             }
         }
+        // Returning Home can reveal the retained menu without destroying this
+        // live stream scene. Its hidden content must not intercept input.
+        .opacity(viewModel.isHidingForResume ? 0 : 1)
+        .allowsHitTesting(!viewModel.isHidingForResume)
+        .accessibilityHidden(viewModel.isHidingForResume)
+        .persistentSystemOverlays((viewModel.isHidingForResume || viewModel.streamSettings.dimPassthrough) ? .hidden : .automatic)
         // Keep lifecycle receivers on the scene root: the stopped/error branch
         // must receive Stop/Resume events too, not only the live UIKit controller.
         .onChange(of: viewModel.shouldCloseStream) { _, shouldClose in
@@ -233,7 +239,7 @@ struct UIKitStreamView: View {
             guard viewModel.activelyStreaming else { return }
             windowRecovery.didResumeStream()
             viewModel.isHidingForResume = false
-            dismissWindow(id: "mainView")
+            viewModel.hideMainMenuForStream()
             let currentMode = SpatialAudioMode(rawValue: viewModel.streamSettings.spatialAudioMode) ?? .window
             AudioHelpers.applySpatialAudioMode(currentMode)
         }
@@ -387,21 +393,26 @@ struct UIKitStreamView: View {
 
     // MARK: - Window Management Logic
 
-    /// Replace the plain stream window with the singleton menu without destroying
-    /// either scene. visionOS keeps the stream window's transform and restores it
-    /// when the pushed menu is dismissed.
-    private func pushMainMenuOverStream() {
+    /// Reactivate the retained menu at its own pose, not at the stream window's
+    /// center. Only use pushWindow when there is no original menu (e.g. an intent).
+    private func showMainMenuForResume() {
         guard windowRecovery.beginLiveMenuPresentation() else { return }
-        viewModel.mainMenuPresentedOverStream = true
-        pushWindow(id: "mainView")
+        let hasOriginalMenu = viewModel.hasRetainedMainMenuWindow
+        viewModel.mainMenuVisibility.showForNavigation()
+        viewModel.mainMenuPresentedOverStream = !hasOriginalMenu
+        if hasOriginalMenu {
+            openWindow(id: "mainView")
+        } else {
+            pushWindow(id: "mainView")
+        }
     }
 
     /// Recovery navigation is deliberately NOT guarded by resource teardown.
-    /// Push the menu into the stream's position before closing the source scene.
+    /// Prefer the original menu's position before closing the source scene.
     /// The menu acknowledges its appearance and dismisses the dead stream itself.
     private func returnToMainMenuAfterStreamStopped() {
         let presentation = windowRecovery.stoppedMenuPresentation(
-            menuAlreadyPushed: viewModel.mainMenuPresentedOverStream
+            menuAlreadyAvailable: viewModel.hasRetainedMainMenuWindow || viewModel.mainMenuPresentedOverStream
         )
         lastStreamErrorMessage = nil
         viewModel.savedStreamConfigForResume = nil
@@ -466,6 +477,7 @@ struct UIKitStreamView: View {
         // pushWindow backgrounds the live stream; this is navigation, not Stop.
         guard !viewModel.mainMenuPresentedOverStream,
               !viewModel.isHidingForResume else { return }
+        guard streamConfig?.sessionUUID == viewModel.activeSessionToken else { return }
 
         // If we are disappearing but activelyStreaming is true, it means the user closed the window manually.
         // We should clean up the stream logic.
