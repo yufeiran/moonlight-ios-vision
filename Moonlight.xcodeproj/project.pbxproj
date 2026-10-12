@@ -80,6 +80,8 @@
 		B1EDB1362D4D95A700EB1839 /* DrawableVideoDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB1302D4D95A700EB1839 /* DrawableVideoDecoder.swift */; };
 		B1EDB1372D4D95A700EB1839 /* UIKitStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB1342D4D95A700EB1839 /* UIKitStreamView.swift */; };
 		ABF950219DDF4BCDA530F001 /* StreamWindowRecoveryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABF950219DDF4BCDA530F002 /* StreamWindowRecoveryState.swift */; };
+		ABF950219DDF4BCDA530F011 /* ClientWindowPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABF950219DDF4BCDA530F012 /* ClientWindowPolicy.swift */; };
+		ABF950219DDF4BCDA530F021 /* ClientDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABF950219DDF4BCDA530F022 /* ClientDiagnostics.swift */; };
 		B1EDB1392D4D95A700EB1839 /* ObservableConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB1312D4D95A700EB1839 /* ObservableConnectionManager.swift */; };
 		B1EDB13C2D4D95BF00EB1839 /* StreamConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB13B2D4D95BF00EB1839 /* StreamConfiguration.swift */; };
 		B1EDB13D2D4D95BF00EB1839 /* StreamConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1EDB13B2D4D95BF00EB1839 /* StreamConfiguration.swift */; };
@@ -395,6 +397,8 @@
 		B1EDB1332D4D95A700EB1839 /* StreamControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamControls.swift; sourceTree = "<group>"; };
 		B1EDB1342D4D95A700EB1839 /* UIKitStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIKitStreamView.swift; sourceTree = "<group>"; };
 		ABF950219DDF4BCDA530F002 /* StreamWindowRecoveryState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamWindowRecoveryState.swift; sourceTree = "<group>"; };
+		ABF950219DDF4BCDA530F012 /* ClientWindowPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientWindowPolicy.swift; sourceTree = "<group>"; };
+		ABF950219DDF4BCDA530F022 /* ClientDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDiagnostics.swift; sourceTree = "<group>"; };
 		B1EDB13A2D4D95BF00EB1839 /* AnyVideoDecoderRenderer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AnyVideoDecoderRenderer.h; sourceTree = "<group>"; };
 		B1EDB13B2D4D95BF00EB1839 /* StreamConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamConfiguration.swift; sourceTree = "<group>"; };
 		D4746EEA1CBC740C006FB401 /* Moonlight-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Moonlight-Bridging-Header.h"; path = "Input/Moonlight-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -823,6 +827,8 @@
 				F1E2D3C4B5A6978869504132 /* StreamViewStubs.swift */,
 				B1EDB1342D4D95A700EB1839 /* UIKitStreamView.swift */,
 				ABF950219DDF4BCDA530F002 /* StreamWindowRecoveryState.swift */,
+				ABF950219DDF4BCDA530F012 /* ClientWindowPolicy.swift */,
+				ABF950219DDF4BCDA530F022 /* ClientDiagnostics.swift */,
 				3E86FC1C2D4FFDED0016BB8E /* UpdatesView.swift */,
 				6581B5F02D5434100022400F /* VideoTypes.swift */,
 			);
@@ -1463,6 +1469,8 @@
 				3E86FC1D2D4FFDF20016BB8E /* UpdatesView.swift in Sources */,
 				B1EDB1372D4D95A700EB1839 /* UIKitStreamView.swift in Sources */,
 				ABF950219DDF4BCDA530F001 /* StreamWindowRecoveryState.swift in Sources */,
+				ABF950219DDF4BCDA530F011 /* ClientWindowPolicy.swift in Sources */,
+				ABF950219DDF4BCDA530F021 /* ClientDiagnostics.swift in Sources */,
 				B1EDB1392D4D95A700EB1839 /* ObservableConnectionManager.swift in Sources */,
 				F7A119182B5DDF73001E8686 /* IdManager.m in Sources */,
 				F7A119192B5DDF73001E8686 /* Controller.m in Sources */,
@@ -1705,7 +1713,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Moonlight XrOS Personal.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = NWLYZ5DJ4D;
 				DEFINES_MODULE = YES;
 				ENABLE_MODULE_VERIFIER = YES;
@@ -1775,7 +1783,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Moonlight XrOS Personal.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = NWLYZ5DJ4D;
 				DEFINES_MODULE = YES;
 				ENABLE_MODULE_VERIFIER = YES;

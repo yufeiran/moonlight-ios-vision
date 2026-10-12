@@ -19,10 +19,8 @@ struct ComputerViewWrapper: View {
 
     var body: some View {
         // Check if a host is selected *here*
-        if let hostBinding = Binding($selectedHost) {
-            // If a host is selected, create the non-optional binding
-            // safely within this conditional block and show ComputerView.
-            ComputerView(host: hostBinding)
+        if let host = selectedHost {
+            ComputerView(host: retainedSceneBinding(snapshot: host))
                 // ComputerView already gets viewModel via @EnvironmentObject
         } else {
             // If no host is selected, show a placeholder view.

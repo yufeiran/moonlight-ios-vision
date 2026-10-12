@@ -156,6 +156,7 @@ struct AppsView: View {
 
     @MainActor
     private func launchStreamWithMode(app: TemporaryApp, mode: StreamModeOption) async {
+        print("[StreamRoute] Launch requested: mode=\(mode), lifecycle=\(viewModel.streamState.rawValue)")
         let settings = viewModel.streamSettings
         switch mode {
         case .uikit:

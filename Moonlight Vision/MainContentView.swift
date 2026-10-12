@@ -27,6 +27,7 @@ struct MainContentView: View {
     @State private var newHostIp = ""
     @State private var isRefreshingDiscovery = false // State to track refresh status
     @State private var showDeletionTriggeredMessage = false
+    @State private var menuTransitionTask: Task<Void, Never>?
 
 
 
@@ -152,7 +153,7 @@ struct MainContentView: View {
                 if showDeletionTriggeredMessage {
                     Text(viewModel.localized("host_deletion_triggered"))
                 }
-                else if let selectedHost = Binding<TemporaryHost>($selectedHost) {
+                else if selectedHost != nil {
                     ComputerViewWrapper(selectedHost: $selectedHost)
                         .environmentObject(viewModel)
                 } else {
@@ -240,6 +241,7 @@ struct MainContentView: View {
                 .environmentObject(viewModel)
         }
         .onAppear {
+            print("[Scene] Main menu appeared; streaming=\(viewModel.activelyStreaming)")
             viewModel.mainMenuVisibility.windowDidAppear()
             finishStoppedStreamWindowTransition()
         }
@@ -269,13 +271,27 @@ struct MainContentView: View {
     private func finishStoppedStreamWindowTransition() {
         guard scenePhase == .active,
               viewModel.mainMenuVisibility.canAcknowledgeReturn,
-              let scene = viewModel.stoppedStreamSceneAwaitingMenu else { return }
-        print("[WindowRecovery] Main menu active; dismissing stopped \(scene) scene")
-        viewModel.stoppedStreamSceneAwaitingMenu = nil
-        if let windowID = scene.windowID {
-            dismissWindow(id: windowID)
-        } else {
-            Task { await dismissImmersiveSpace() }
+              let scene = viewModel.stoppedStreamSceneAwaitingMenu,
+              menuTransitionTask == nil else { return }
+        // Do not destroy another graph from onAppear while SwiftUI is still
+        // instantiating this window's outputs (visionOS 27 can assert there).
+        menuTransitionTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, scenePhase == .active,
+                  viewModel.mainMenuVisibility.canAcknowledgeReturn,
+                  viewModel.stoppedStreamSceneAwaitingMenu == scene else {
+                menuTransitionTask = nil
+                return
+            }
+            print("[WindowRecovery] Main menu active; dismissing stopped \(scene) scene")
+            viewModel.stoppedStreamSceneAwaitingMenu = nil
+            await Task.yield()
+            if let windowID = scene.windowID {
+                dismissWindow(id: windowID)
+            } else {
+                await dismissImmersiveSpace()
+            }
+            menuTransitionTask = nil
         }
     }
 

@@ -13,6 +13,7 @@ import SwiftUI
 import VideoToolbox // Added to check for hardware AV1 support
 
 struct SettingsView: View {
+    @AppStorage("yuDiagnosticsEnabled") private var diagnosticsEnabled = true
     @Binding public var settings: TemporarySettings
     @EnvironmentObject private var viewModel: MainViewModel
     @State private var selectedAspectRatio: AspectRatio?
@@ -399,6 +400,13 @@ struct SettingsView: View {
                 }
                 
                 Section(header: Label(viewModel.localized("general_settings"), systemImage: "gear")) {
+                    Toggle("调试日志与 Mac 自动同步", isOn: $diagnosticsEnabled)
+                        .onChange(of: diagnosticsEnabled) { _, _ in
+                            ClientDiagnostics.shared.preferenceChanged()
+                        }
+                    Text("仅通过已配对的 Mac 拉取脱敏日志和闪退报告，不上传外网。客户端保留最近约 4 MB；关闭后停止记录和同步，已有日志保留。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Toggle(isOn: $settings.optimizeGames) {
                         Label(viewModel.localized("optimize_game_settings"), systemImage: "wand.and.stars")
                     }

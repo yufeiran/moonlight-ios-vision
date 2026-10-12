@@ -239,3 +239,26 @@ Thanks again for your support :)
     * Change the "Bundle Identifier" to something unique.
     * **Crucial:** Remove the "Low Latency Streaming" entitlement from signing and capabilities if you do not have a paid developer account with this entitlement enabled.
     * Select your registered Vision Pro in the target bar and click Play for logging, or profile to for not logging.
+### Yu build 30 diagnostics and compact windows
+
+- Removes force-unwrapped optional scene/host bindings during teardown. Main-menu
+  recovery defers scene dismissal until the next main-actor turn; stream scene
+  disappearance no longer mutates the scene value while SwiftUI dismantles it.
+- Main menu defaults to 900×600 points; UIKit streams default to 960×540 (adapted
+  to the video aspect ratio), including oversized remembered dimensions. Volume
+  defaults to 0.85×0.70×0.40 meters. Negotiated video resolution is unchanged.
+- `ClientDiagnostics` captures native and Swift stdout/stderr to four rotating,
+  sanitized log files (about 4 MiB) in `Library/Caches/YuMoonlightDiagnostics`.
+  Password/key/certificate/URL-query material is filtered. Disk I/O is off the
+  rendering thread; diagnostics failures do not abort streaming.
+- `Tools/sync-client-diagnostics.sh DEVICE_ID ABSOLUTE_LOG_DIRECTORY` pulls logs
+  and this app's `.ips` reports over the existing paired CoreDevice connection.
+  This personal Mac's login agent runs every 30 seconds and stores them under
+  `~/Library/Logs/YuMoonlight`. There is no LAN server, embedded credential, or
+  cloud upload. The Mac must be awake and the paired device reachable. Offline
+  runs preserve the most recently pulled logs. Settings can disable recording
+  and subsequent synchronization; already stored logs remain.
+- Tests: `Tests/run-client-diagnostics-regression.sh` covers redaction, bounded
+  rotation, live stdout/stderr capture, retained nil-source bindings and compact
+  sizing. These are regressions, not proof that every visionOS beta graph or
+  compositor failure is resolved; physical-device retesting remains necessary.

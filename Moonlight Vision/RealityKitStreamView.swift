@@ -38,10 +38,7 @@ struct RealityKitStreamView: View {
         if let config = streamConfig {
             if config.sessionUUID == viewModel.activeSessionToken {
                 _RealityKitStreamView(
-                    streamConfig: Binding<StreamConfiguration>(
-                        get: { config },
-                        set: { streamConfig = $0 }
-                    ),
+                    streamConfig: retainedSceneBinding(snapshot: config),
                     needsHdr: needsHdr,
                     isImmersive: isImmersive,
                     swapAction: { }
@@ -3446,6 +3443,7 @@ struct _RealityKitStreamView: View {
     }
 
     internal init(streamConfig: Binding<StreamConfiguration>, needsHdr: Bool, isImmersive: Bool, swapAction: @escaping () -> Void) {
+        print("[Scene] RealityKit init: immersive=\(isImmersive), hdr=\(needsHdr), \(streamConfig.wrappedValue.width)x\(streamConfig.wrappedValue.height)")
         self.swapAction = swapAction
         self._streamConfig = streamConfig
         self.needsHdr = needsHdr

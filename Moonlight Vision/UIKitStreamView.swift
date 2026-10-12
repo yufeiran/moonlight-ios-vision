@@ -41,10 +41,11 @@ struct UIKitStreamView: View {
 
     var body: some View {
         Group {
-            if viewModel.activelyStreaming,
-               let configBinding = Binding($streamConfig) {
+            if viewModel.activelyStreaming, let config = streamConfig,
+               config.sessionUUID == viewModel.activeSessionToken {
+                let configBinding = retainedSceneBinding(snapshot: config)
                 _UIKitStreamView(streamConfig: configBinding)
-                    .id(reloadToken)
+                    .id("\(config.sessionUUID)-\(reloadToken)")
                     .onAppear { lastStreamErrorMessage = nil }
                     .clipShape(RoundedRectangle(cornerRadius: CGFloat(viewModel.streamSettings.uikitWindowCornerRadius), style: .continuous))
                     .preferredSurroundingsEffect(
@@ -156,6 +157,7 @@ struct UIKitStreamView: View {
                         .padding(.bottom, 20)
                     }
                     .onAppear {
+                        print("[Scene] UIKit stream appeared; session=\(config.sessionUUID)")
                         windowRecovery = StreamWindowRecoveryState()
                         
                         // Zombie / Resume Fix:
@@ -702,7 +704,7 @@ func applyAspectRatioLock(streamConfig: StreamConfiguration, targetWindow: UIWin
 
     let streamWidth = CGFloat(streamConfig.width)
     let streamHeight = CGFloat(streamConfig.height)
-    let streamAspectRatio = streamWidth / streamHeight
+    let streamAspectRatio = streamWidth > 0 && streamHeight > 0 ? streamWidth / streamHeight : 16.0 / 9.0
 
     var desiredSize = CGSize.zero
     
@@ -732,19 +734,10 @@ func applyAspectRatioLock(streamConfig: StreamConfiguration, targetWindow: UIWin
         }
     }
     
-    if desiredSize == .zero {
-        let maxWidth: CGFloat = 2000
-        for desiredWidthInt in (1...Int(maxWidth)).reversed() {
-            let desiredWidth = CGFloat(desiredWidthInt)
-            let desiredHeightFloat = desiredWidth / streamAspectRatio
-            let desiredHeightInt = Int(round(desiredHeightFloat))
-
-            if desiredHeightInt > 0 {
-                desiredSize = CGSize(width: desiredWidth, height: CGFloat(desiredHeightInt))
-                break
-            }
-        }
-    }
+    desiredSize = ClientWindowSizing.compactStreamSize(
+        width: streamConfig.width, height: streamConfig.height,
+        saved: desiredSize == .zero ? nil : desiredSize
+    )
 
     guard let windowScene = window.windowScene else { return }
 

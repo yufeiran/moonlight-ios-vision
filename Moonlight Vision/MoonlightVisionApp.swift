@@ -45,6 +45,7 @@ struct MoonlightVisionApp: SwiftUI.App {
         }
         .windowStyle(.plain)
         .windowResizability(.contentSize)
+        .defaultSize(width: ClientWindowSizing.main.width, height: ClientWindowSizing.main.height)
         
         WindowGroup("LoadingStream", id: "dummy") {
             DummyView()
@@ -75,12 +76,9 @@ struct MoonlightVisionApp: SwiftUI.App {
                              appDelegate.mainViewModel.savedStreamConfigForResume = nil
                          }
                      }
-                     .onDisappear { 
-                         streamConfig.wrappedValue = nil
-                     }
                 }
                 .windowStyle(.volumetric)
-                .defaultSize(width: 1.2, height: 1.2, depth: 1.2, in: .meters)
+                .defaultSize(width: 0.85, height: 0.70, depth: 0.40, in: .meters)
 
                 // 2. Unbounded Immersive Space (New)
                 ImmersiveSpace(id: "realitykitImmersiveSpace", for: StreamConfiguration.self) { streamConfig in
@@ -108,9 +106,6 @@ struct MoonlightVisionApp: SwiftUI.App {
                              appDelegate.mainViewModel.savedStreamConfigForResume = nil
                          }
                      }
-                     .onDisappear { 
-                         streamConfig.wrappedValue = nil
-                     }
                 }
                 .immersionStyle(selection: $immersionManager.currentStyle, in: .mixed, .progressive, .full)
 
@@ -135,12 +130,14 @@ struct MoonlightVisionApp: SwiftUI.App {
                 }
                 .windowStyle(.plain)
                 .windowResizability(.contentSize)
+                .defaultSize(width: ClientWindowSizing.stream.width, height: ClientWindowSizing.stream.height)
     }
 }
 
 @main
 struct MainWrapper {
     static func main() -> Void {
+        ClientDiagnostics.shared.start()
         SDLMainWrapper.setMainReady();
         if #available(visionOS 2.0, *) {
             MoonlightVisionApp.main()

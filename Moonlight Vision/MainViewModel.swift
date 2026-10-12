@@ -67,6 +67,7 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     @Published var stoppedStreamSceneAwaitingMenu: StoppedStreamScene? = nil
     @Published var mainMenuVisibility = MainMenuVisibilityState()
     private var mainMenuSceneSessionID: String?
+    private var compactMainWindowSessions: Set<String> = []
     
     // Flag to indicate if we are hiding the stream to resume later
     @Published var isHidingForResume: Bool = false
@@ -310,6 +311,15 @@ class MainViewModel: NSObject, ObservableObject, DiscoveryCallback, PairCallback
     func registerMainMenuWindowScene(_ scene: UIWindowScene) {
         mainMenuSceneSessionID = scene.session.persistentIdentifier
         if !mainMenuVisibility.hasWindow { mainMenuVisibility.windowDidAppear() }
+        // defaultSize alone does not affect a previously restored large window.
+        // Apply once per system scene, then leave subsequent user resizing alone.
+        if compactMainWindowSessions.insert(scene.session.persistentIdentifier).inserted {
+            scene.requestGeometryUpdate(UIWindowScene.GeometryPreferences.Vision(
+                size: ClientWindowSizing.main, resizingRestrictions: .freeform
+            )) { error in
+                print("[WindowSizing] Main menu geometry request failed: \(error)")
+            }
+        }
     }
 
     var hasRetainedMainMenuWindow: Bool {
