@@ -46,12 +46,29 @@ struct ClientDiagnosticsRegression {
         precondition(optional == nil && retained.wrappedValue == "live")
         print("PASS: nil scene during child teardown neither traps nor resurrects the scene")
 
-        precondition(ClientWindowSizing.compactStreamSize(width: 3840, height: 2160) == CGSize(width: 960, height: 540))
-        precondition(ClientWindowSizing.compactStreamSize(width: 3840, height: 2160, saved: CGSize(width: 2000, height: 1125)) == CGSize(width: 960, height: 540))
+        precondition(ClientWindowSizing.compactStreamSize(width: 3840, height: 2160) == CGSize(width: 1200, height: 675))
+        precondition(ClientWindowSizing.compactStreamSize(width: 3840, height: 2160, saved: CGSize(width: 2000, height: 1125)) == CGSize(width: 1200, height: 675))
         precondition(ClientWindowSizing.compactStreamSize(width: 3840, height: 2160, saved: CGSize(width: 640, height: 360)) == CGSize(width: 640, height: 360))
-        precondition(ClientWindowSizing.compactStreamSize(width: 0, height: 0).width == 960)
-        precondition(ClientWindowSizing.compactStreamSize(width: 1080, height: 1920).height == 720)
+        precondition(ClientWindowSizing.compactStreamSize(width: 0, height: 0).width == 1200)
+        precondition(ClientWindowSizing.compactStreamSize(width: 1080, height: 1920).height == 900)
         print("PASS: compact window dimensions, smaller saved sizes, invalid dimensions and portrait streams")
+
+        let suite = "yu-window-test-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(960.0, forKey: "uikitWindowWidth")
+        defaults.set(540.0, forKey: "uikitWindowHeight")
+        ClientWindowSizing.migratePreviousStreamDefault(in: defaults)
+        precondition(defaults.double(forKey: "uikitWindowWidth") == 1200)
+        precondition(defaults.double(forKey: "uikitWindowHeight") == 675)
+        ClientWindowSizing.migratePreviousStreamDefault(in: defaults)
+        precondition(defaults.double(forKey: "uikitWindowWidth") == 1200)
+        defaults.removeObject(forKey: "yuStreamWindowSizeRevision")
+        defaults.set(640.0, forKey: "uikitWindowWidth")
+        defaults.set(360.0, forKey: "uikitWindowHeight")
+        ClientWindowSizing.migratePreviousStreamDefault(in: defaults)
+        precondition(defaults.double(forKey: "uikitWindowWidth") == 640)
+        print("PASS: previous default enlarges once; custom resizing is preserved")
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("yu-diagnostic-test-\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }

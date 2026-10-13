@@ -6,6 +6,14 @@ It also supports a Sunshine fork called [Apollo](https://github.com/ClassicOldSo
 
 Moonlight also has a [PC client](https://github.com/moonlight-stream/moonlight-qt) and [Android client](https://github.com/moonlight-stream/moonlight-android).
 
+### Yu Moonlight build 31
+
+UIKit now defaults to 1200×675 points and volume bounds to 1.0×0.80×0.50 meters;
+the 900×600 main menu stays unchanged. Build 30's remembered 960-point default is
+enlarged once, while manually chosen smaller sizes are preserved. Video resolution
+is unchanged. The companion Yu Sunshine now wakes an attached sleeping display
+before encoder preflight, rather than rejecting the stream before capture can wake it.
+
 ### Yu Moonlight build 29 — experimental low-latency rendering
 
 On visionOS 27 physical devices, RealityKit streaming uses shared GPU-private

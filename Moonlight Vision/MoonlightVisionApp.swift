@@ -78,7 +78,7 @@ struct MoonlightVisionApp: SwiftUI.App {
                      }
                 }
                 .windowStyle(.volumetric)
-                .defaultSize(width: 0.85, height: 0.70, depth: 0.40, in: .meters)
+                .defaultSize(width: 1.0, height: 0.80, depth: 0.50, in: .meters)
 
                 // 2. Unbounded Immersive Space (New)
                 ImmersiveSpace(id: "realitykitImmersiveSpace", for: StreamConfiguration.self) { streamConfig in
@@ -138,6 +138,7 @@ struct MoonlightVisionApp: SwiftUI.App {
 struct MainWrapper {
     static func main() -> Void {
         ClientDiagnostics.shared.start()
+        ClientWindowSizing.migratePreviousStreamDefault()
         SDLMainWrapper.setMainReady();
         if #available(visionOS 2.0, *) {
             MoonlightVisionApp.main()
